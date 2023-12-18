@@ -19,5 +19,19 @@ class AE_Model(nn.Module):
 
     def forward(self, x):
         x = self.flatten(x)
+
+
+
+class Encoder(nn.Module):
+    def __init__(self, input_dimension, network_slope, latent_space_dimension, activation_function=nn.GELU):
+        super().__init__()
+
+
+
+
+class Decoder(nn.Module):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+
         
 
