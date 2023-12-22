@@ -1,37 +1,36 @@
-import numpy as np
 import torch
-import pandas as pd
-import matplotlib.pyplot as plt
-from torch import nn
-
-class AE_Model(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-        self.flatten = nn.Flatten()
-        self.linear_relu_stack = nn.Sequential(
-            nn.Linear(28*28, 512),
-            nn.ReLU(),
-            nn.Linear(512, 512),
-            nn.ReLU(),
-            nn.Linear(512, 10),
-        )
-
-    def forward(self, x):
-        x = self.flatten(x)
-
-
+import torch.nn as nn
+import torch.nn.functional as F
 
 class Encoder(nn.Module):
-    def __init__(self, input_dimension, network_slope, latent_space_dimension, activation_function=nn.GELU):
-        super().__init__()
+    def __init__(self, input_size, hidden_size, num_layers, latent_dim):
+        super(Encoder, self).__init__()
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+        self.fc = nn.Linear(hidden_size, latent_dim)
 
-
-
+    def forward(self, x):
+        _, (hidden, _) = self.lstm(x)
+        return self.fc(hidden[-1])
 
 class Decoder(nn.Module):
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
+    def __init__(self, latent_dim, hidden_size, num_layers, output_size):
+        super(Decoder, self).__init__()
+        self.lstm = nn.LSTM(latent_dim, hidden_size, num_layers, batch_first=True)
+        self.fc = nn.Linear(hidden_size, output_size)
 
-        
+    def forward(self, x):
+        x, _ = self.lstm(x)
+        return self.fc(x)
+
+class LSTMAutoencoder(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, latent_dim):
+        super(LSTMAutoencoder, self).__init__()
+        self.encoder = Encoder(input_size, hidden_size, num_layers, latent_dim)
+        self.decoder = Decoder(latent_dim, hidden_size, num_layers, input_size)
+
+    def forward(self, x):
+        latent = self.encoder(x)
+        # Replicate latent code across time steps
+        latent = latent.unsqueeze(1).repeat(1, x.size(1), 1)
+        return self.decoder(latent)
 
