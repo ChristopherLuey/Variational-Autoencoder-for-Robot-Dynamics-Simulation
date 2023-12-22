@@ -2,15 +2,12 @@ from ae import *
 import torch
 
 input_size = 32   # Size of the input nodes
-hidden_size = 64  # Hidden layer size
-num_layers = 2    # Number of LSTM layers
+num_layers = 4    # Number of LSTM layers
 latent_dim = 16   # Size of the latent space
+sequence_length = 10  # Length of the sequence
 
-autoencoder = LSTMAutoencoder(input_size, hidden_size, num_layers, latent_dim)
+autoencoder = LSTMAutoencoder(input_size, num_layers, latent_dim, sequence_length)
 
-example_data = torch.randn(5, 10, input_size)
-output = autoencoder(example_data)
-
-print(output.shape)
-
-
+example_input = torch.randn(5, sequence_length, input_size)
+output = autoencoder(example_input)
+print(output.shape)  # Check output shape
