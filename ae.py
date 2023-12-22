@@ -1,4 +1,3 @@
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -30,7 +29,6 @@ class LSTMAutoencoder(nn.Module):
 
     def forward(self, x):
         latent = self.encoder(x)
-        # Replicate latent code across time steps
         latent = latent.unsqueeze(1).repeat(1, x.size(1), 1)
         return self.decoder(latent)
 

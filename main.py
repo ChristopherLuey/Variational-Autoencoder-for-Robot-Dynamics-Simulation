@@ -1,4 +1,5 @@
 from ae import *
+import torch
 
 input_size = 32   # Size of the input nodes
 hidden_size = 64  # Hidden layer size
