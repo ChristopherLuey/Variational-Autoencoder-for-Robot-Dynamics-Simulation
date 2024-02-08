@@ -1,47 +1,71 @@
+import torch
 import torch.nn as nn
-import numpy as np
+import torch.optim as optim
 
 class Encoder(nn.Module):
-    def __init__(self, input_size, num_layers, latent_dim):
+    def __init__(self, layer_sizes, activation=nn.ReLU):
         super(Encoder, self).__init__()
-        self.layers = nn.ModuleList()
-        layer_sizes = np.linspace(input_size, latent_dim, num_layers)
-
-        for i in range(num_layers - 1):
-            self.layers.append(nn.LSTM(int(layer_sizes[i]), int(layer_sizes[i+1]), batch_first=True))
-
-        self.fc = nn.Linear(int(layer_sizes[-1]), latent_dim)
+        self.model = nn.Sequential()
+        for i in range(len(layer_sizes) - 1):
+            self.model.add_module(f"linear_{i}", nn.Linear(layer_sizes[i], layer_sizes[i+1]))
+            if i < len(layer_sizes) - 2:  # Activation after each layer except the last
+                self.model.add_module(f"activation_{i}", activation())
 
     def forward(self, x):
-        for layer in self.layers:
-            x, _ = layer(x)
-        x = x[:, -1, :]  # Taking the last time step
-        return self.fc(x)
+        return self.model(x)
 
 class Decoder(nn.Module):
-    def __init__(self, input_size, latent_dim, num_layers):
+    def __init__(self, layer_sizes, activation=nn.ReLU, output_activation=None):
         super(Decoder, self).__init__()
-        self.layers = nn.ModuleList()
-        layer_sizes = np.linspace(latent_dim, input_size, num_layers)
-
-        for i in range(num_layers - 1):
-            self.layers.append(nn.LSTM(int(layer_sizes[i]), int(layer_sizes[i+1]), batch_first=True))
-
-        self.fc = nn.Linear(int(layer_sizes[-1]), input_size)
-
-    def forward(self, x, sequence_length):
-        x = x.unsqueeze(1).repeat(1, sequence_length, 1)  # Repeat latent vector
-        for layer in self.layers:
-            x, _ = layer(x)
-        return self.fc(x)
-
-class LSTMAutoencoder(nn.Module):
-    def __init__(self, input_size, num_layers, latent_dim, sequence_length):
-        super(LSTMAutoencoder, self).__init__()
-        self.encoder = Encoder(input_size, num_layers, latent_dim)
-        self.decoder = Decoder(input_size, latent_dim, num_layers)
-        self.sequence_length = sequence_length
+        self.model = nn.Sequential()
+        for i in range(len(layer_sizes) - 1):
+            self.model.add_module(f"linear_{i}", nn.Linear(layer_sizes[i], layer_sizes[i+1]))
+            if i < len(layer_sizes) - 2:  # Activation after each layer except before the last
+                self.model.add_module(f"activation_{i}", activation())
+        if output_activation:  # Optional output activation function
+            self.model.add_module("output_activation", output_activation())
 
     def forward(self, x):
-        latent = self.encoder(x)
-        return self.decoder(latent, self.sequence_length)
+        return self.model(x)
+
+class Autoencoder(nn.Module):
+    def __init__(self, input_size, latent_size, encoder_layer_sizes, decoder_layer_sizes, output_activation=None):
+        super(Autoencoder, self).__init__()
+        # Define encoder layer sizes including the input and latent layers
+        full_encoder_sizes = [input_size] + encoder_layer_sizes + [latent_size]
+        self.encoder = Encoder(full_encoder_sizes)
+
+        # Define decoder layer sizes including the latent and output layers
+        full_decoder_sizes = [latent_size] + decoder_layer_sizes + [input_size]
+        self.decoder = Decoder(full_decoder_sizes, output_activation=output_activation)
+
+        self.criterion = nn.MSELoss()  # Use Mean Squared Error Loss for non-binary data
+        self.optimizer = None  # Optimizer will be defined in training method
+        self.last_loss = None
+
+    def forward(self, x):
+        encoded = self.encoder(x)
+        decoded = self.decoder(encoded)
+        return decoded
+
+    def train_model(self, input_batch, learning_rate=1e-3):
+        self.train()
+        self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
+        output = self.forward(input_batch)
+        loss = self.criterion(output, input_batch)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        self.last_loss = loss.item()
+        return self.last_loss
+
+    def evaluate(self, input_batch):
+        self.eval()
+        with torch.no_grad():
+            output = self.forward(input_batch)
+            loss = self.criterion(output, input_batch)
+        return output, loss.item()
+
+    @property
+    def objective_function_value(self):
+        return self.last_loss
