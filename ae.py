@@ -19,7 +19,7 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
         self.model = nn.Sequential()
         for i in range(len(layer_sizes) - 1):
-            self.model.add_module(f"linear_{i}", nn.Linear(layer_sizes[i], layer_sizes[i+1]))
+            self.model.add_module(f"linear_{i}", nn.Linear(layer_sizes[i], layer_sizes[i+1])) 
             if i < len(layer_sizes) - 2:  # Activation after each layer except before the last
                 self.model.add_module(f"activation_{i}", activation())
         if output_activation:  # Optional output activation function
@@ -40,17 +40,18 @@ class Autoencoder(nn.Module):
         self.decoder = Decoder(full_decoder_sizes, output_activation=output_activation)
 
         self.criterion = nn.MSELoss()  # Use Mean Squared Error Loss for non-binary data
-        self.optimizer = None  # Optimizer will be defined in training method
         self.last_loss = None
+        self.learning_rate = 1e-3
+        self.optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
+
 
     def forward(self, x):
         encoded = self.encoder(x)
         decoded = self.decoder(encoded)
         return decoded
 
-    def train_model(self, input_batch, learning_rate=1e-3):
+    def train_model(self, input_batch):
         self.train()
-        self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
         output = self.forward(input_batch)
         loss = self.criterion(output, input_batch)
         self.optimizer.zero_grad()
@@ -69,3 +70,11 @@ class Autoencoder(nn.Module):
     @property
     def objective_function_value(self):
         return self.last_loss
+    
+class TaskNetwork(nn.Module):
+    def __init__(self, latent_size):
+        super(TaskNetwork, self).__init__()
+        self.fc = nn.Linear(latent_size, 1)
+
+    def forward(self, x):
+        return self.fc(x)
