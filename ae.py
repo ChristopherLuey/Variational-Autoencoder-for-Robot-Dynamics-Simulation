@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
+
 class Encoder(nn.Module):
     def __init__(self, layer_sizes, activation=nn.ReLU):
         super(Encoder, self).__init__()
@@ -28,9 +29,9 @@ class Decoder(nn.Module):
     def forward(self, x):
         return self.model(x)
 
-class Autoencoder(nn.Module):
+class AugmentedAutoencoder(nn.Module):
     def __init__(self, input_size, latent_size, encoder_layer_sizes, decoder_layer_sizes, output_activation=None):
-        super(Autoencoder, self).__init__()
+        super(AugmentedAutoencoder, self).__init__()
         # Define encoder layer sizes including the input and latent layers
         full_encoder_sizes = [input_size] + encoder_layer_sizes + [latent_size]
         self.encoder = Encoder(full_encoder_sizes)
@@ -38,6 +39,9 @@ class Autoencoder(nn.Module):
         # Define decoder layer sizes including the latent and output layers
         full_decoder_sizes = [latent_size] + decoder_layer_sizes + [input_size]
         self.decoder = Decoder(full_decoder_sizes, output_activation=output_activation)
+
+        # Define task network
+        self.task_network = TaskNetwork(latent_size)
 
         self.criterion = nn.MSELoss()  # Use Mean Squared Error Loss for non-binary data
         self.last_loss = None
@@ -47,30 +51,73 @@ class Autoencoder(nn.Module):
 
     def forward(self, x):
         encoded = self.encoder(x)
+        task_pred = self.task_network(encoded)
         decoded = self.decoder(encoded)
-        return decoded
+        return decoded, task_pred
 
-    def train_model(self, input_batch):
+    # def train_model(self, input_batch):
+    #     self.train()
+    #     output = self.forward_autoencoder(input_batch)
+    #     loss = self.criterion(output, input_batch)
+    #     self.optimizer.zero_grad()
+    #     loss.backward()
+    #     self.optimizer.step()
+    #     self.last_loss = loss.item()
+    #     return self.last_loss
+    
+    def train_model(self, input_batch, target_value):
         self.train()
-        output = self.forward(input_batch)
-        loss = self.criterion(output, input_batch)
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-        self.last_loss = loss.item()
-        return self.last_loss
+        
+        # Forward pass through the autoencoder
+        decoded, task_pred = self.forward(input_batch)
 
-    def evaluate(self, input_batch):
+        # Calculate the reconstruction loss
+        reconstruction_loss = self.criterion(decoded, input_batch)
+        
+        # Forward pass through the task network
+        
+        # Calculate the task-specific loss, assuming a target value is provided
+
+        task_loss = -(torch.sum(input_batch, dim=1) - target_value) ** 2
+        #task_loss = self.criterion(task_pred, target_value)
+        
+        # Combine the losses
+        combined_loss = reconstruction_loss + task_loss
+        
+        # Zero the gradients
+        self.optimizer.zero_grad()
+        
+        # Backward pass and optimize
+        combined_loss.backward()
+        self.optimizer.step()
+        
+        self.last_loss = combined_loss.item()
+        return (reconstruction_loss.item(), task_loss.item(), self.last_loss)
+    
+
+    def evaluate(self, input_batch, target_value):
         self.eval()
         with torch.no_grad():
-            output = self.forward(input_batch)
-            loss = self.criterion(output, input_batch)
-        return output, loss.item()
+            encoded = self.encoder(input_batch)
+            decoded = self.decoder(encoded)
+        
+            # Calculate the reconstruction loss
+            reconstruction_loss = self.criterion(decoded, input_batch)
+        
+            # Forward pass through the task network
+            task_pred = self.task_network(encoded)
+            
+            #task_loss = self.criterion(task_pred, target_value)
+            task_loss = (torch.sum(input_batch, dim=1) - target_value) ** 2
+
+
+        return (decoded, task_pred), reconstruction_loss+task_loss.item()
 
     @property
     def objective_function_value(self):
         return self.last_loss
     
+
 class TaskNetwork(nn.Module):
     def __init__(self, latent_size):
         super(TaskNetwork, self).__init__()
