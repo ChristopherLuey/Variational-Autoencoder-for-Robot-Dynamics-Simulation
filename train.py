@@ -179,7 +179,12 @@ if __name__ == '__main__':
 
     from AE.ae import AugmentedAutoencoder
 
-    model_kwargs = {'': }
+    model_kwargs = {'input_size': config['input_size'], 
+                    'latent_size': config['latent_size'],
+                    'encoder_layer_sizes': config['encoder_layer_sizes'],
+                    'decoder_layer_sizes': config['decoder_layer_sizes']}
+
+    model = AugmentedAutoencoder()
 
     #### jit model for planner (samples)
     with torch.no_grad():

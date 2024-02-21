@@ -23,6 +23,10 @@ default:
         window: False
 
 AntEnv_v3:
+    input_size: 32
+    latent_size: 5
+    encoder_layer_sizes: [10,5]
+    decoder_layer_sizes: [5,10]
     model_layers: [512,512,512]
     reward_layers: [512,512,512]
     done_layers: None
