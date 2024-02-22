@@ -162,46 +162,46 @@ if __name__ == '__main__':
     cprint(env,'green')
     print('actions states',action_dim,state_dim)
 
-    # load models / policies / controllers
-    from environments import ReplayBuffer
-    eval_freq = 5
-    replay_buffer_size = int(1e6)
-    replay_buffer = ReplayBuffer(replay_buffer_size,state_dim,action_dim)
-    replay_buffer.seed(args.seed)
+    # # load models / policies / controllers
+    # from environments import ReplayBuffer
+    # eval_freq = 5
+    # replay_buffer_size = int(1e6)
+    # replay_buffer = ReplayBuffer(replay_buffer_size,state_dim,action_dim)
+    # replay_buffer.seed(args.seed)
 
 
 
 
-    from mpc_lib import Model, ModelOptimizer
-    model_kwargs = {'model_layers':config['model_layers'],'model_AF':config['model_activation_fun'],
-                    'reward_layers':config['reward_layers'],'reward_AF':config['reward_activation_fun']}
-    model = Model(state_dim, action_dim,**model_kwargs).to(device)
+    # from mpc_lib import Model, ModelOptimizer
+    # model_kwargs = {'model_layers':config['model_layers'],'model_AF':config['model_activation_fun'],
+    #                 'reward_layers':config['reward_layers'],'reward_AF':config['reward_activation_fun']}
+    # model = Model(state_dim, action_dim,**model_kwargs).to(device)
 
-    from AE.ae import AugmentedAutoencoder
+    # from AE.ae import AugmentedAutoencoder
 
-    model_kwargs = {'input_size': config['input_size'], 
-                    'latent_size': config['latent_size'],
-                    'encoder_layer_sizes': config['encoder_layer_sizes'],
-                    'decoder_layer_sizes': config['decoder_layer_sizes']}
+    # model_kwargs = {'input_size': config['input_size'], 
+    #                 'latent_size': config['latent_size'],
+    #                 'encoder_layer_sizes': config['encoder_layer_sizes'],
+    #                 'decoder_layer_sizes': config['decoder_layer_sizes']}
 
-    model = AugmentedAutoencoder()
+    # model = AugmentedAutoencoder()
 
-    #### jit model for planner (samples)
-    with torch.no_grad():
-        inputs = (torch.rand(config['planner']['samples'],state_dim,device=device),torch.rand( config['planner']['samples'],action_dim,device=device))
-        jit_model_plan = torch.jit.trace(model,inputs) # set up traced model
-        primed = jit_model_plan(*inputs) # prime model
-        # print(jit_model_plan.graph)
-    #### jit model for optimizer (batch size)
+    # #### jit model for planner (samples)
+    # with torch.no_grad():
+    #     inputs = (torch.rand(config['planner']['samples'],state_dim,device=device),torch.rand( config['planner']['samples'],action_dim,device=device))
+    #     jit_model_plan = torch.jit.trace(model,inputs) # set up traced model
+    #     primed = jit_model_plan(*inputs) # prime model
+    #     # print(jit_model_plan.graph)
+    # #### jit model for optimizer (batch size)
 
 
-    inputs = (torch.rand(config['batch_size'],state_dim,device=device),torch.rand( config['batch_size'],action_dim,device=device))
-    jit_model_opt = torch.jit.trace(model,inputs) # set up traced model
-    primed = jit_model_opt(*inputs) # prime model
-    model_optim = ModelOptimizer(jit_model_opt, replay_buffer, lr=config['model_lr'],device=device)
-    if base_method == 'mpp':
-        from mpc_lib import PathIntegral
-        planner = PathIntegral(jit_model_plan,device=device,**config['planner'])
-    elif base_method == 'max':
-        from mpc_lib import MaxDiff
-        planner = MaxDiff(jit_model_plan,device=device,**config['planner'])
+    # inputs = (torch.rand(config['batch_size'],state_dim,device=device),torch.rand( config['batch_size'],action_dim,device=device))
+    # jit_model_opt = torch.jit.trace(model,inputs) # set up traced model
+    # primed = jit_model_opt(*inputs) # prime model
+    # model_optim = ModelOptimizer(jit_model_opt, replay_buffer, lr=config['model_lr'],device=device)
+    # if base_method == 'mpp':
+    #     from mpc_lib import PathIntegral
+    #     planner = PathIntegral(jit_model_plan,device=device,**config['planner'])
+    # elif base_method == 'max':
+    #     from mpc_lib import MaxDiff
+    #     planner = MaxDiff(jit_model_plan,device=device,**config['planner'])
