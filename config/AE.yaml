@@ -23,24 +23,10 @@ default:
         window: False
 
 AntEnv_v3:
-    input_size: 32
+    input_size: 96
     latent_size: 5
-    encoder_layer_sizes: [10,5]
-    decoder_layer_sizes: [5,10]
-    model_layers: [512,512,512]
-    reward_layers: [512,512,512]
-    done_layers: None
-    batch_size: 256
-    name_mod: '_H20_alpha5'
-    planner:
-        explr_dim: [0, 1, 2]
-        weights: [1.0, 1.0, 0.005]
-        horizon: 20
-        alpha: 5
-        lam: 0.5
-        samples: 1000
-        window: False
-    task_info:
-        include_contacts: False
-        task: 'orig'
-        desired_speed: None
+    encoder_layer_sizes: [10]
+    decoder_layer_sizes: [10]
+    samples: 10
+    perturbation_strength: 0.3
+    

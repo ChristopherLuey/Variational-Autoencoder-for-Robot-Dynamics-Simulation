@@ -163,11 +163,11 @@ if __name__ == '__main__':
     print('actions states',action_dim,state_dim)
 
     # # load models / policies / controllers
-    # from environments import ReplayBuffer
-    # eval_freq = 5
-    # replay_buffer_size = int(1e6)
-    # replay_buffer = ReplayBuffer(replay_buffer_size,state_dim,action_dim)
-    # replay_buffer.seed(args.seed)
+    from environments.replay_buffer import ReplayBuffer
+    eval_freq = 5
+    replay_buffer_size = int(1e6)
+    replay_buffer = ReplayBuffer(replay_buffer_size,state_dim,action_dim)
+    replay_buffer.seed(args.seed)
 
 
 
@@ -177,15 +177,33 @@ if __name__ == '__main__':
     #                 'reward_layers':config['reward_layers'],'reward_AF':config['reward_activation_fun']}
     # model = Model(state_dim, action_dim,**model_kwargs).to(device)
 
-    # from AE.ae import AugmentedAutoencoder
+    from AE.ae import AugmentedAutoencoder
+    from AE.main import AutoencoderPipeline
 
-    # model_kwargs = {'input_size': config['input_size'], 
-    #                 'latent_size': config['latent_size'],
-    #                 'encoder_layer_sizes': config['encoder_layer_sizes'],
-    #                 'decoder_layer_sizes': config['decoder_layer_sizes']}
+    model_kwargs = {'input_size': config['input_size'], 
+                    'latent_size': config['latent_size'],
+                    'encoder_layer_sizes': config['encoder_layer_sizes'],
+                    'decoder_layer_sizes': config['decoder_layer_sizes'],
+                    'samples': config['samples'],
+                    'perturbation_strength': config['pertubation_strength']}
 
-    # model = AugmentedAutoencoder()
+    target_value = 0
+    model = AutoencoderPipeline(target_value, **model_kwargs).to(device)
 
+    # set up logs
+    start_time = time.time()
+    if args.log:
+        path = save_config(args,config,env_name)
+
+    # main simulation loop
+    max_frames   = config['max_frames']
+    max_steps    = config['max_steps'] if not args.singleshot else max_frames
+    reward_scale = config['reward_scale']
+    batch_size   = config['batch_size']
+
+    frame_idx    = 0
+    rewards      = []
+    eval_rewards = []
     # #### jit model for planner (samples)
     # with torch.no_grad():
     #     inputs = (torch.rand(config['planner']['samples'],state_dim,device=device),torch.rand( config['planner']['samples'],action_dim,device=device))

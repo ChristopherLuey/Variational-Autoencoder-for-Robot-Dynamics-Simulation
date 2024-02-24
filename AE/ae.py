@@ -36,7 +36,7 @@ class AugmentedAutoencoder(nn.Module):
         full_encoder_sizes = [input_size] + encoder_layer_sizes + [latent_size]
         self.encoder = Encoder(full_encoder_sizes)
 
-        # Define decoder layer sizes including the latent and output layers
+        # Define decoder layer sizes
         full_decoder_sizes = [latent_size] + decoder_layer_sizes + [input_size]
         self.decoder = Decoder(full_decoder_sizes, output_activation=output_activation)
 
@@ -73,11 +73,8 @@ class AugmentedAutoencoder(nn.Module):
 
         # Calculate the reconstruction loss
         reconstruction_loss = self.criterion(decoded, input_batch)
-        
-        # Forward pass through the task network
-        
-        # Calculate the task-specific loss, assuming a target value is provided
-
+                
+        # Calculate the task-specific loss
         task_loss = -(torch.sum(input_batch, dim=1) - target_value) ** 2
         #task_loss = self.criterion(task_pred, target_value)
         
@@ -93,7 +90,6 @@ class AugmentedAutoencoder(nn.Module):
         
         self.last_loss = combined_loss.item()
         return (reconstruction_loss.item(), task_loss.item(), self.last_loss)
-    
 
     def evaluate(self, input_batch, target_value):
         self.eval()
@@ -109,7 +105,6 @@ class AugmentedAutoencoder(nn.Module):
             
             #task_loss = self.criterion(task_pred, target_value)
             task_loss = (torch.sum(input_batch, dim=1) - target_value) ** 2
-
 
         return (decoded, task_pred), reconstruction_loss+task_loss.item()
 
