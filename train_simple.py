@@ -38,11 +38,7 @@ def configuration():
 
     with open(config_path, 'r') as f:
         config_dict = yaml.safe_load(f)
-        config = config_dict['default']
-        if args.env in list(config_dict.keys()):
-            config.update(config_dict[args.env])
-        else:
-            raise ValueError('env not found config file')
+        config = config_dict[args.env]
 
     return config
 config = configuration()
@@ -56,15 +52,15 @@ if not args.cpu:
     else:
         args.cpu = True
 
-
-env = gym.make('Ant-v3')
+env = gym.make('Ant-v3', terminate_when_unhealthy=True)
 observation = env.reset()
 print(env.action_space.low)  # Minimum valid values
 print(env.action_space.high)  # Maximum valid values
+joints = 8
 
 from AE.ae import AugmentedAutoencoder, TaskNetwork
 
-model_kwargs = {'input_size': config['input_size'], 
+model_kwargs = {'input_size': config['input_size']*joints, 
                     'latent_size': config['latent_size'],
                     'encoder_layer_sizes': config['encoder_layer_sizes'],
                     'decoder_layer_sizes': config['decoder_layer_sizes']}
@@ -73,15 +69,15 @@ autoencoder = AugmentedAutoencoder(**model_kwargs).to(device)
 task_network = TaskNetwork(config["latent_size"]).to(device)
 samples = config["samples"]
 perturbation_strength = config["perturbation_strength"]
-joints = 8
-control_sequence_time = int(config["input_size"]/joints)
+control_sequence_time = config["input_size"]
+control_sequence_length = config["input_size"]*joints
 target_value_tensor = torch.tensor([0], dtype=torch.float32, device=device)
 
 losses = []
 obj_loss = []
 new_control_seq_values = []
 
-new_control_seq = (2*torch.rand(config["input_size"])-1).to(device)
+new_control_seq = (2*torch.rand(control_sequence_length)-1).to(device)
 
 render_frame = 1
 
@@ -123,10 +119,7 @@ for _ in range(epochs):
 
     for i in range(control_sequence_time):
         action = _new_control_seq[i].cpu().numpy()
-        print(action)
         observation, reward, done, info = env.step(action)
-
-        print(reward)
         total_reward += reward
 
     target_value_tensor = torch.tensor([total_reward], dtype=torch.float32, device=device)

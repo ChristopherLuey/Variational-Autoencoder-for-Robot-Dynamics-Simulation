@@ -1,32 +1,8 @@
-default:
-    method: "maxdiff"
-    max_steps: 1000
-    max_frames: 1000000
-    model_lr: !!float 3e-4
-    reward_scale: 1.0
-    model_iter: 5
-    model_layers: [200,200]
-    model_activation_fun: 'ReLU'
-    reward_layers: [200,200]
-    reward_activation_fun: 'ReLU'
-    name_mod: ''
-    weights: None
-    batch_size: 256
-    planner:
-        horizon: 5
-        samples: 20
-        lam: 0.1
-        eps: 0.5
-        alpha: 5
-        explr_dim: None
-        weights: None
-        window: False
-
 AntEnv_v3:
-    input_size: 96
-    latent_size: 5
-    encoder_layer_sizes: [10]
-    decoder_layer_sizes: [10]
+    input_size: 12
+    latent_size: 8
+    encoder_layer_sizes: [60, 30]
+    decoder_layer_sizes: [30, 60]
     samples: 10
     perturbation_strength: 0.3
     
