@@ -52,7 +52,7 @@ if not args.cpu:
     else:
         args.cpu = True
 
-env = gym.make('Ant-v3', terminate_when_unhealthy=True)
+env = gym.make('Ant-v3', terminate_when_unhealthy=True, healthy_z_range=(0.4,3))
 observation = env.reset()
 print(env.action_space.low)  # Minimum valid values
 print(env.action_space.high)  # Maximum valid values
@@ -106,7 +106,7 @@ def acquire_new_data(last_control_seq):
     return best_seq  
 
 
-epochs = 1000
+epochs = 10000
 for _ in range(epochs):
 
     if epochs % render_frame == 0:  # Conditional render to reduce computation load
