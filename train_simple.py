@@ -8,7 +8,6 @@ import torch
 # matplotlib.use('TkAgg')  # Or 'Qt5Agg', 'GTK3Agg', 'macosx'
 #import matplotlib.pyplot as plt
 
-
 def arg_parse():
     parser = argparse.ArgumentParser()
     parser.add_argument('--env',   type=str,   default='AntEnv_v3', help="Only AntEnv_v3")
