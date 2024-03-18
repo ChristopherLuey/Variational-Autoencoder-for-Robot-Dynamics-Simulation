@@ -4,5 +4,5 @@ AntEnv_v3:
     encoder_layer_sizes: [60, 30]
     decoder_layer_sizes: [30, 60]
     samples: 10
-    perturbation_strength: 0.3
+    perturbation_strength: 0.1
     

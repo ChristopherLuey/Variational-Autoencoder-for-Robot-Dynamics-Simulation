@@ -108,7 +108,7 @@ def acquire_new_data(last_control_seq):
     return best_seq  
 
 
-epochs = 100
+epochs = 1000
 for _ in range(epochs):
 
     if epochs % render_frame == 0:  # Conditional render to reduce computation load
@@ -123,8 +123,9 @@ for _ in range(epochs):
         action = _new_control_seq[i].cpu().numpy()
         observation, reward, done, info = env.step(action)
         total_reward += reward
+        print(reward)
 
-    target_value_tensor = torch.tensor([total_reward], dtype=torch.float32, device=device)
+    target_value_tensor = torch.tensor([total_reward/control_sequence_time], dtype=torch.float32, device=device)
     loss = autoencoder.train_model(new_control_seq.unsqueeze(0), target_value_tensor)
     losses.append(loss[2])
     obj_loss.append(loss[1])
