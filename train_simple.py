@@ -6,7 +6,9 @@ import torch
 # import matplotlib
 # import tkinter
 # matplotlib.use('TkAgg')  # Or 'Qt5Agg', 'GTK3Agg', 'macosx'
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
+
+# export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/.mujoco/mujoco200/bin
 
 def arg_parse():
     parser = argparse.ArgumentParser()
@@ -134,30 +136,30 @@ for _ in range(epochs):
 
 env.close()
 
-# fig, axes = plt.subplots(1, 3, figsize=(12, 6))
+fig, axes = plt.subplots(1, 3, figsize=(12, 6))
 
-# # Plot training loss on the first subplot
-# axes[0].plot(range(1, epochs + 1), losses, label="Training Loss")
-# axes[0].set_xlabel('Epoch')
-# axes[0].set_ylabel('Loss')
-# axes[0].set_title('Model Loss Over Time')
-# axes[0].legend()
+# Plot training loss on the first subplot
+axes[0].plot(range(1, epochs + 1), losses, label="Training Loss")
+axes[0].set_xlabel('Epoch')
+axes[0].set_ylabel('Loss')
+axes[0].set_title('Model Loss Over Time')
+axes[0].legend()
 
-# # Plot objective loss on the second subplot
-# axes[1].plot(range(1, epochs + 1), obj_loss, label="Objective Loss")
-# axes[1].set_xlabel('Epoch')
-# axes[1].set_ylabel('Loss')
-# axes[1].set_title('Objective Loss Over Time')
-# axes[1].legend()
+# Plot objective loss on the second subplot
+axes[1].plot(range(1, epochs + 1), obj_loss, label="Objective Loss")
+axes[1].set_xlabel('Epoch')
+axes[1].set_ylabel('Loss')
+axes[1].set_title('Objective Loss Over Time')
+axes[1].legend()
 
-# # Plot new control sequence values on the third subplot
-# new_control_seq_values_transposed = list(zip(*new_control_seq_values))
-# for seq_index, seq_values in enumerate(new_control_seq_values_transposed):
-#     axes[2].plot(range(1, epochs + 1), seq_values, label=f"Seq {seq_index + 1}")
-# axes[2].set_xlabel('Epoch')
-# axes[2].set_ylabel('Value')
-# axes[2].set_title('New Control Seq Values Over Time')
-# #axes[2].legend()
+# Plot new control sequence values on the third subplot
+new_control_seq_values_transposed = list(zip(*new_control_seq_values))
+for seq_index, seq_values in enumerate(new_control_seq_values_transposed):
+    axes[2].plot(range(1, epochs + 1), seq_values, label=f"Seq {seq_index + 1}")
+axes[2].set_xlabel('Epoch')
+axes[2].set_ylabel('Value')
+axes[2].set_title('New Control Seq Values Over Time')
+#axes[2].legend()
 
-# plt.tight_layout()
-# plt.show()
+plt.tight_layout()
+plt.show()
