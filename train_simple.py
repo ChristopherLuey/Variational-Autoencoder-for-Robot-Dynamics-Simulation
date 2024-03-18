@@ -3,9 +3,9 @@ import numpy as np
 import argparse
 import yaml
 import torch
-# import matplotlib
-# import tkinter
-# matplotlib.use('TkAgg')  # Or 'Qt5Agg', 'GTK3Agg', 'macosx'
+import matplotlib
+import tkinter
+matplotlib.use('TkAgg')  # Or 'Qt5Agg', 'GTK3Agg', 'macosx'
 import matplotlib.pyplot as plt
 
 # export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/.mujoco/mujoco200/bin
@@ -108,7 +108,7 @@ def acquire_new_data(last_control_seq):
     return best_seq  
 
 
-epochs = 10000
+epochs = 100
 for _ in range(epochs):
 
     if epochs % render_frame == 0:  # Conditional render to reduce computation load
