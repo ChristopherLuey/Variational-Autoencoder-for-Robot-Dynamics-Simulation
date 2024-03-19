@@ -54,7 +54,7 @@ if not args.cpu:
     else:
         args.cpu = True
 
-env = gym.make('Ant-v3', terminate_when_unhealthy=True, healthy_z_range=(0.4,3))
+env = gym.make('Ant-v3', terminate_when_unhealthy=True, healthy_z_range=(0.4,5), ctrl_cost_weight=0, contact_cost_weight=0, healthy_reward=0)
 observation = env.reset()
 print(env.action_space.low)  # Minimum valid values
 print(env.action_space.high)  # Maximum valid values
@@ -78,6 +78,7 @@ target_value_tensor = torch.tensor([0], dtype=torch.float32, device=device)
 losses = []
 obj_loss = []
 new_control_seq_values = []
+task_reward_list = []
 
 new_control_seq = (2*torch.rand(control_sequence_length)-1).to(device)
 
@@ -107,12 +108,12 @@ def acquire_new_data(last_control_seq):
 
     return best_seq  
 
-
-epochs = 1000
+clear = np.array([0,0,0,0,0,0,0,0])
+epochs = 500
 for _ in range(epochs):
 
-    if epochs % render_frame == 0:  # Conditional render to reduce computation load
-        env.render()
+    # if epochs % render_frame == 0:  # Conditional render to reduce computation load
+    #     env.render()
 
 
     new_control_seq = acquire_new_data(new_control_seq)
@@ -121,15 +122,25 @@ for _ in range(epochs):
 
     for i in range(control_sequence_time):
         action = _new_control_seq[i].cpu().numpy()
-        observation, reward, done, info = env.step(action)
-        total_reward += reward
-        print(reward)
+        r = 0
+        t = 10
+        for j in range(t):
+            observation, reward, done, info = env.step(action)
+            env.render()
+            r+=reward
+        total_reward+= r/t
+    task_reward_list.append(total_reward)
 
-    target_value_tensor = torch.tensor([total_reward/control_sequence_time], dtype=torch.float32, device=device)
+    target_value_tensor = torch.tensor([total_reward], dtype=torch.float32, device=device)
     loss = autoencoder.train_model(new_control_seq.unsqueeze(0), target_value_tensor)
     losses.append(loss[2])
     obj_loss.append(loss[1])
     new_control_seq_values.append(new_control_seq.to("cpu").tolist()) 
+    # for i in range(5):
+    #     observation, reward, done, info = env.step(clear)
+    #     env.render()
+    # observation = env.reset()
+  
 
     # Check if the episode is done
     if done:
@@ -163,4 +174,8 @@ axes[2].set_title('New Control Seq Values Over Time')
 #axes[2].legend()
 
 plt.tight_layout()
+plt.show()
+
+
+plt.plot(range(1, epochs + 1),task_reward_list)
 plt.show()

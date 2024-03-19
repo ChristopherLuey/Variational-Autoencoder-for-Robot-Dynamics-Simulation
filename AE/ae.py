@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import numpy as np
 
 
 class Encoder(nn.Module):
@@ -45,7 +46,7 @@ class AugmentedAutoencoder(nn.Module):
 
         self.criterion = nn.MSELoss()  # Use Mean Squared Error Loss for non-binary data
         self.last_loss = None
-        self.learning_rate = 1e-3
+        self.learning_rate = 1e-4
         self.optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
 
 
@@ -75,8 +76,8 @@ class AugmentedAutoencoder(nn.Module):
         reconstruction_loss = self.criterion(decoded, input_batch)
                 
         # Calculate the task-specific loss
-        task_loss = -(torch.sum(input_batch, dim=1) - target_value) ** 2
-        #task_loss = self.criterion(task_pred, target_value)
+        # task_loss = (torch.sum(input_batch, dim=1) - target_value) ** 2
+        task_loss = self.criterion(task_pred, target_value)
         
         # Combine the losses
         combined_loss = reconstruction_loss + task_loss
@@ -103,8 +104,8 @@ class AugmentedAutoencoder(nn.Module):
             # Forward pass through the task network
             task_pred = self.task_network(encoded)
             
-            #task_loss = self.criterion(task_pred, target_value)
-            task_loss = (torch.sum(input_batch, dim=1) - target_value) ** 2
+            task_loss = self.criterion(task_pred, target_value)
+            # task_loss = (torch.sum(input_batch, dim=1) - target_value) ** 2
 
         return (decoded, task_pred), reconstruction_loss+task_loss.item()
 
