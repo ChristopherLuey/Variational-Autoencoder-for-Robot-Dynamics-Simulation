@@ -54,7 +54,7 @@ class AugmentedAutoencoder(nn.Module):
         encoded = self.encoder(x)
         task_pred = self.task_network(encoded)
         decoded = self.decoder(encoded)
-        return decoded, task_pred
+        return decoded, task_pred, encoded
 
     # def train_model(self, input_batch):
     #     self.train()
@@ -70,7 +70,7 @@ class AugmentedAutoencoder(nn.Module):
         self.train()
         
         # Forward pass through the autoencoder
-        decoded, task_pred = self.forward(input_batch)
+        decoded, task_pred, encoded = self.forward(input_batch)
 
         # Calculate the reconstruction loss
         reconstruction_loss = self.criterion(decoded, input_batch)
@@ -90,7 +90,7 @@ class AugmentedAutoencoder(nn.Module):
         self.optimizer.step()
         
         self.last_loss = combined_loss.item()
-        return (reconstruction_loss.item(), task_loss.item(), self.last_loss)
+        return (reconstruction_loss.item(), task_loss.item(), self.last_loss, encoded)
 
     def evaluate(self, input_batch, target_value):
         self.eval()
@@ -108,6 +108,42 @@ class AugmentedAutoencoder(nn.Module):
             # task_loss = (torch.sum(input_batch, dim=1) - target_value) ** 2
 
         return (decoded, task_pred), reconstruction_loss+task_loss.item()
+    
+
+    def evaluate_gradient(self, input_batch, target_value):
+        """
+        Evaluate the model to compute the loss for the given input batch and target value.
+        
+        Args:
+        - input_batch (torch.Tensor): The input batch.
+        - target_value (torch.Tensor): The target value for the task network.
+        
+        Returns:
+        - Tuple[torch.Tensor, torch.Tensor]: A tuple containing the decoded output and the task prediction.
+        - torch.Tensor: The combined loss (reconstruction loss + task loss).
+        """
+        self.eval()
+        # Ensure target_value has the correct shape for criterion comparison
+        target_value = target_value.unsqueeze(1) if target_value.dim() == 1 else target_value
+        
+        # Forward pass through the encoder and decoder to get the reconstructed output
+        encoded = self.encoder(input_batch)
+        decoded = self.decoder(encoded)
+
+        # Calculate the reconstruction loss
+        reconstruction_loss = self.criterion(decoded, input_batch)
+
+        # Forward pass through the task network to get the task prediction
+        task_pred = self.task_network(encoded)
+
+        # Calculate the task-specific loss
+        task_loss = self.criterion(task_pred, target_value)
+
+        # Combine the losses
+        combined_loss = reconstruction_loss/2 + task_loss * 2
+
+        # Return both decoded output and task prediction, and the combined loss
+        return (decoded, task_pred), combined_loss
 
     @property
     def objective_function_value(self):
