@@ -198,7 +198,7 @@ def acquire_new_data_sgd(last_control_seq, lr=0.01, max_iterations=100, threshol
 
 
 clear = np.array([0,0,0,0,0,0,0,0])
-epochs = 50
+epochs = 500
 xvel = 0
 for _ in range(epochs):
 
@@ -239,9 +239,9 @@ for _ in range(epochs):
     obj_loss.append(loss[1])
     encoded_list.append(loss[3].to("cpu").tolist())
     new_control_seq_values.append(new_control_seq.to("cpu").tolist()) 
-    for i in range(5):
-        observation, reward, done, info = env.step(clear)
-    env.render()
+    # for i in range(5):
+    #     observation, reward, done, info = env.step(clear)
+    #     env.render()
     # observation = env.reset()
   
 
