@@ -1,8 +1,9 @@
 AntEnv_v3:
     input_size: 4
-    latent_size: 4
-    encoder_layer_sizes: [25, 12]
-    decoder_layer_sizes: [12, 25]
+    latent_size: 6
+    encoder_layer_sizes: [25, 18, 12, 6]
+    decoder_layer_sizes: [6, 12, 18, 25]
+    task_layer_sizes: [6, 4, 1]
     samples: 100
     perturbation_strength: 1
     

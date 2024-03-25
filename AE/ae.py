@@ -31,7 +31,7 @@ class Decoder(nn.Module):
         return self.model(x)
 
 class AugmentedAutoencoder(nn.Module):
-    def __init__(self, input_size, latent_size, encoder_layer_sizes, decoder_layer_sizes, output_activation=None):
+    def __init__(self, input_size, latent_size, encoder_layer_sizes, decoder_layer_sizes, task_layer_sizes, output_activation=None):
         super(AugmentedAutoencoder, self).__init__()
         # Define encoder layer sizes including the input and latent layers
         full_encoder_sizes = [input_size] + encoder_layer_sizes + [latent_size]
@@ -42,11 +42,11 @@ class AugmentedAutoencoder(nn.Module):
         self.decoder = Decoder(full_decoder_sizes, output_activation=output_activation)
 
         # Define task network
-        self.task_network = TaskNetwork(latent_size)
+        self.task_network = TaskNetwork(latent_size, task_layer_sizes)
 
         self.criterion = nn.MSELoss()  # Use Mean Squared Error Loss for non-binary data
         self.last_loss = None
-        self.learning_rate = 1e-4
+        self.learning_rate = 1e-1
         self.optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
 
 
@@ -80,7 +80,7 @@ class AugmentedAutoencoder(nn.Module):
         task_loss = self.criterion(task_pred, target_value)
         
         # Combine the losses
-        combined_loss = reconstruction_loss + task_loss
+        combined_loss = 0.5*reconstruction_loss + task_loss
         
         # Zero the gradients
         self.optimizer.zero_grad()
@@ -104,7 +104,8 @@ class AugmentedAutoencoder(nn.Module):
             # Forward pass through the task network
             task_pred = self.task_network(encoded)
             
-            task_loss = self.criterion(task_pred, target_value)
+            # task_loss = self.criterion(task_pred, target_value)
+            task_loss = - task_pred**2
             # task_loss = (torch.sum(input_batch, dim=1) - target_value) ** 2
 
         return (decoded, task_pred), reconstruction_loss+task_loss.item()
@@ -137,10 +138,11 @@ class AugmentedAutoencoder(nn.Module):
         task_pred = self.task_network(encoded)
 
         # Calculate the task-specific loss
-        task_loss = self.criterion(task_pred, target_value)
+        # task_loss = self.criterion(task_pred, target_value)
+        task_loss = - task_pred**2
 
         # Combine the losses
-        combined_loss = reconstruction_loss/2 + task_loss * 2
+        combined_loss = 0.5*reconstruction_loss + task_loss
 
         # Return both decoded output and task prediction, and the combined loss
         return (decoded, task_pred), combined_loss
@@ -151,9 +153,15 @@ class AugmentedAutoencoder(nn.Module):
     
 
 class TaskNetwork(nn.Module):
-    def __init__(self, latent_size):
+    def __init__(self, latent_size, task_layer_sizes, activation=nn.ReLU):
         super(TaskNetwork, self).__init__()
-        self.fc = nn.Linear(latent_size, 1)
+        self.model = nn.Sequential()
+        # self.fc = nn.Linear(latent_size, 1)
+
+        for i in range(len(task_layer_sizes) - 1):
+            self.model.add_module(f"linear_{i}", nn.Linear(task_layer_sizes[i], task_layer_sizes[i+1]))
+            if i < len(task_layer_sizes) - 2:  # Activation after each layer except the last
+                self.model.add_module(f"activation_{i}", activation())
 
     def forward(self, x):
-        return self.fc(x)
+        return self.model(x)

@@ -4,7 +4,7 @@ import argparse
 import yaml
 import torch
 import matplotlib
-import tkinter
+# import tkinter
 matplotlib.use('TkAgg')  # Or 'Qt5Agg', 'GTK3Agg', 'macosx'
 import matplotlib.pyplot as plt
 
@@ -80,10 +80,11 @@ from AE.ae import AugmentedAutoencoder, TaskNetwork
 model_kwargs = {'input_size': config['input_size']*joints, 
                     'latent_size': config['latent_size'],
                     'encoder_layer_sizes': config['encoder_layer_sizes'],
-                    'decoder_layer_sizes': config['decoder_layer_sizes']}
+                    'decoder_layer_sizes': config['decoder_layer_sizes'],
+                    'task_layer_sizes': config["task_layer_sizes"]}
 
 autoencoder = AugmentedAutoencoder(**model_kwargs).to(device)
-task_network = TaskNetwork(config["latent_size"]).to(device)
+# task_network = TaskNetwork(config["latent_size"], config["task_layer_sizes"]).to(device)
 samples = config["samples"]
 perturbation_strength = config["perturbation_strength"]
 control_sequence_time = config["input_size"]
@@ -207,11 +208,17 @@ for _ in range(epochs):
 
 
     # new_control_seq = acquire_new_data(new_control_seq)
-    if (target_value_tensor < 0):
-        target_value_tensor = -target_value_tensor
-    else:
-        target_value_tensor = target_value_tensor
+    # if (target_value_tensor < 0):
+    #     target_value_tensor = -target_value_tensor
+    # else:
+    #     target_value_tensor = target_value_tensor
+    # _, loss = autoencoder.evaluate_gradient(new_control_seq.unsqueeze(0), target_value_tensor)
+    # print("prior control seq",new_control_seq,loss)
+
     new_control_seq = acquire_new_data_sgd(new_control_seq)
+
+    # _, loss = autoencoder.evaluate_gradient(new_control_seq.unsqueeze(0), target_value_tensor)
+    # print("new control seq",new_control_seq, loss)
     total_reward = 0
     _new_control_seq = new_control_seq.view(control_sequence_time, joints)
 
