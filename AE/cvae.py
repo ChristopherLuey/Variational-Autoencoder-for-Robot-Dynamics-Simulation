@@ -16,21 +16,21 @@ class CVAEEncoder(nn.Module):
         self.mean = nn.Linear(layer_sizes[-1], latent_space)
         self.log_variation = nn.Linear(layer_sizes[-1], latent_space)
 
-    def forward(self, x, c):
-        z = torch.cat((x,c), dim=-1)
-        z = self.model(z)
+    def forward(self, x):
+        z = self.model(x)
         mean = self.mean(z)
         log_variation = self.log_variation(z)
         return mean, log_variation
 
 class CVAEDecoder(nn.Module):
-    def __init__(self, layer_sizes, condition, activation=nn.ReLU, output_activation=None):
+    def __init__(self, layer_sizes, latent_size, activation=nn.ReLU, output_activation=None):
         super(CVAEDecoder, self).__init__()
         self.model = nn.Sequential()
         for i in range(len(layer_sizes) - 1):
             self.model.add_module(f"linear_{i}", nn.Linear(layer_sizes[i], layer_sizes[i+1])) 
-
+            if i < len(layer_sizes)
             self.model.add_module(f"activation_{i}", activation())
+
         if output_activation:  # Optional output activation function
             self.model.add_module("output_activation", output_activation())
 
@@ -58,7 +58,7 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
 
 
     def reparameterize(self, mean, log_variation):
-        std = torch.exp(0.5 * log_variation)
+        std = torch.exp(0.5 * log_variation) # convert log to non-log
         eps = torch.randn_like(std)
         return mean + eps * std
 
@@ -69,7 +69,7 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
         latent_representation = reparameterize(mean, log_variation)
         task_pred = self.task_network(latent_representation)
         decoded = self.decoder(torch.cat((latent_representation, condition), dim=-1))
-        return decoded, task_pred, encoded
+        return decoded, task_pred, latent_representation
 
     # def train_model(self, input_batch):
     #     self.train()
