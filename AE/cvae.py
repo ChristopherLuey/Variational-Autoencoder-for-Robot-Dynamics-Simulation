@@ -4,41 +4,48 @@ import torch.optim as optim
 import numpy as np
 
 
-class Encoder(nn.Module):
-    def __init__(self, layer_sizes, activation=nn.ReLU):
-        super(Encoder, self).__init__()
+class CVAEEncoder(nn.Module):
+    def __init__(self, layer_sizes, latent_space, activation=nn.ReLU):
+        super(CVAEEncoder, self).__init__()
         self.model = nn.Sequential()
+
         for i in range(len(layer_sizes) - 1):
             self.model.add_module(f"linear_{i}", nn.Linear(layer_sizes[i], layer_sizes[i+1]))
-            if i < len(layer_sizes) - 2:  # Activation after each layer except the last
-                self.model.add_module(f"activation_{i}", activation())
+            self.model.add_module(f"activation_{i}", activation())
 
-    def forward(self, x):
-        return self.model(x)
+        self.mean = nn.Linear(layer_sizes[-1], latent_space)
+        self.log_variation = nn.Linear(layer_sizes[-1], latent_space)
 
-class Decoder(nn.Module):
-    def __init__(self, layer_sizes, activation=nn.ReLU, output_activation=None):
-        super(Decoder, self).__init__()
+    def forward(self, x, c):
+        z = torch.cat((x,c), dim=-1)
+        z = self.model(z)
+        mean = self.mean(z)
+        log_variation = self.log_variation(z)
+        return mean, log_variation
+
+class CVAEDecoder(nn.Module):
+    def __init__(self, layer_sizes, condition, activation=nn.ReLU, output_activation=None):
+        super(CVAEDecoder, self).__init__()
         self.model = nn.Sequential()
         for i in range(len(layer_sizes) - 1):
             self.model.add_module(f"linear_{i}", nn.Linear(layer_sizes[i], layer_sizes[i+1])) 
-            if i < len(layer_sizes) - 2:  # Activation after each layer except before the last
-                self.model.add_module(f"activation_{i}", activation())
+
+            self.model.add_module(f"activation_{i}", activation())
         if output_activation:  # Optional output activation function
             self.model.add_module("output_activation", output_activation())
 
     def forward(self, x):
         return self.model(x)
 
-class AugmentedAutoencoder(nn.Module):
-    def __init__(self, input_size, latent_size, encoder_layer_sizes, decoder_layer_sizes, task_layer_sizes, output_activation=None):
-        super(AugmentedAutoencoder, self).__init__()
+class AugmentedConditionalVariationalAutoencoder(nn.Module):
+    def __init__(self, input_size, latent_size, encoder_layer_sizes, decoder_layer_sizes, task_layer_sizes, condition_size, output_activation=None):
+        super(AugmentedConditionalVariationalAutoencoder, self).__init__()
         # Define encoder layer sizes including the input and latent layers
-        full_encoder_sizes = [input_size] + encoder_layer_sizes + [latent_size]
-        self.encoder = Encoder(full_encoder_sizes)
+        full_encoder_sizes = [input_size + condition_size] + encoder_layer_sizes
+        self.encoder = Encoder(full_encoder_sizes, latent_size)
 
         # Define decoder layer sizes
-        full_decoder_sizes = [latent_size] + decoder_layer_sizes + [input_size]
+        full_decoder_sizes = [latent_size + condition_size] + decoder_layer_sizes + [input_size]
         self.decoder = Decoder(full_decoder_sizes, output_activation=output_activation)
 
         # Define task network
@@ -50,10 +57,18 @@ class AugmentedAutoencoder(nn.Module):
         self.optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
 
 
-    def forward(self, x):
-        encoded = self.encoder(x)
-        task_pred = self.task_network(encoded)
-        decoded = self.decoder(encoded)
+    def reparameterize(self, mean, log_variation):
+        std = torch.exp(0.5 * log_variation)
+        eps = torch.randn_like(std)
+        return mean + eps * std
+
+
+    def forward(self, x, condition):
+        z = torch.cat((x, condition), dim=-1)
+        mean, log_variation = self.encoder(z)
+        latent_representation = reparameterize(mean, log_variation)
+        task_pred = self.task_network(latent_representation)
+        decoded = self.decoder(torch.cat((latent_representation, condition), dim=-1))
         return decoded, task_pred, encoded
 
     # def train_model(self, input_batch):

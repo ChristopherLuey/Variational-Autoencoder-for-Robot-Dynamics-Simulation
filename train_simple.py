@@ -4,8 +4,8 @@ import argparse
 import yaml
 import torch
 import matplotlib
-# import tkinter
-matplotlib.use('TkAgg')  # Or 'Qt5Agg', 'GTK3Agg', 'macosx'
+import tkinter
+matplotlib.use('TkAgg')  # Or 'Qt5Agg', 'GTK3Agg', 'macosx', 'TkAgg'
 import matplotlib.pyplot as plt
 
 # export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/.mujoco/mujoco200/bin
@@ -199,7 +199,7 @@ def acquire_new_data_sgd(last_control_seq, lr=0.01, max_iterations=100, threshol
 
 
 clear = np.array([0,0,0,0,0,0,0,0])
-epochs = 500
+epochs = 1
 xvel = 0
 for _ in range(epochs):
 
