@@ -55,6 +55,7 @@ class AugmentedAutoencoder(nn.Module):
         task_pred = self.task_network(encoded)
         decoded = self.decoder(encoded)
         return decoded, task_pred, encoded
+        
 
     # def train_model(self, input_batch):
     #     self.train()

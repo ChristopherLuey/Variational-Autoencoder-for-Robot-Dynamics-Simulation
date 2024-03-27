@@ -24,4 +24,12 @@ class CustomAntEnv(AntEnv):
         initial_observation = super().reset(**kwargs)
         return initial_observation
 
+    # @property
+    # def is_healthy(self):
+    #     return super().is_healthy()
+    
+    @property
+    def terminated(self):
+        return super().terminated()
+
     # Other custom methods as needed

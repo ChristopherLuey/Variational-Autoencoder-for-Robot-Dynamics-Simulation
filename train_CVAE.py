@@ -7,8 +7,13 @@ import matplotlib
 import tkinter
 matplotlib.use('TkAgg')  # Or 'Qt5Agg', 'GTK3Agg', 'macosx', 'TkAgg'
 import matplotlib.pyplot as plt
+import math
 
 # export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/.mujoco/mujoco200/bin
+
+import os
+os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
+
 
 def arg_parse():
     parser = argparse.ArgumentParser()
@@ -69,22 +74,20 @@ register(
 )
 
 
-env = gym.make('CustomAnt-v3', terminate_when_unhealthy=True, healthy_z_range=(0.3,5), ctrl_cost_weight=0, contact_cost_weight=0, healthy_reward=0)
+env = gym.make('Ant-v3', terminate_when_unhealthy=True, healthy_z_range=(0.3,5), ctrl_cost_weight=0, contact_cost_weight=0, healthy_reward=0)
 observation = env.reset()
-print(env.action_space.low)  # Minimum valid values
-print(env.action_space.high)  # Maximum valid values
 joints = 8
 
-from AE.ae import AugmentedAutoencoder, TaskNetwork
+from AE.cvae import AugmentedConditionalVariationalAutoencoder
 
 model_kwargs = {'input_size': config['input_size']*joints, 
                     'latent_size': config['latent_size'],
                     'encoder_layer_sizes': config['encoder_layer_sizes'],
                     'decoder_layer_sizes': config['decoder_layer_sizes'],
-                    'task_layer_sizes': config["task_layer_sizes"]}
+                    'task_layer_sizes': config["task_layer_sizes"],
+                    'condition_size': config["condition_size"]}
 
-autoencoder = AugmentedAutoencoder(**model_kwargs).to(device)
-# task_network = TaskNetwork(config["latent_size"], config["task_layer_sizes"]).to(device)
+autoencoder = AugmentedConditionalVariationalAutoencoder(**model_kwargs).to(device)
 samples = config["samples"]
 perturbation_strength = config["perturbation_strength"]
 control_sequence_time = config["input_size"]
@@ -102,6 +105,7 @@ new_control_seq.requires_grad_(True)
 
 
 render_frame = 1
+direction = torch.tensor([0.0], dtype=torch.float32, device=device)
 
 def acquire_new_data(last_control_seq):
     """
@@ -119,7 +123,7 @@ def acquire_new_data(last_control_seq):
         perturbed_seq = torch.clamp(last_control_seq + perturbation, min=-1, max=1).to(device)
 
         # Evaluate the perturbed sequence without updating the autoencoder weights
-        _, loss = autoencoder.evaluate(perturbed_seq.unsqueeze(0), target_value_tensor)
+        _, loss = autoencoder.evaluate(perturbed_seq.unsqueeze(0), target_value_tensor, direction)
 
         if loss < lowest_loss:
             lowest_loss = loss
@@ -160,7 +164,7 @@ def acquire_new_data(last_control_seq):
 #     return x
 
 
-def acquire_new_data_sgd(last_control_seq, lr=0.01, max_iterations=100, threshold=0.01):
+def acquire_new_data_sgd(last_control_seq, lr=0.01, max_iterations=10, threshold=0.01):
     """
     Acquire new data for training the autoencoder using stochastic gradient descent.
     
@@ -181,7 +185,7 @@ def acquire_new_data_sgd(last_control_seq, lr=0.01, max_iterations=100, threshol
         optimizer.zero_grad()
 
         # Use the evaluate function to compute the loss
-        _, loss = autoencoder.evaluate_gradient(last_control_seq.unsqueeze(0), target_value_tensor)
+        _, loss = autoencoder.evaluate_gradient(last_control_seq.unsqueeze(0), target_value_tensor, direction)
         
         # Backward pass to compute gradients
         loss.backward()
@@ -199,7 +203,7 @@ def acquire_new_data_sgd(last_control_seq, lr=0.01, max_iterations=100, threshol
 
 
 clear = np.array([0,0,0,0,0,0,0,0])
-epochs = 1
+epochs = 500
 xvel = 0
 for _ in range(epochs):
 
@@ -212,12 +216,12 @@ for _ in range(epochs):
     #     target_value_tensor = -target_value_tensor
     # else:
     #     target_value_tensor = target_value_tensor
-    # _, loss = autoencoder.evaluate_gradient(new_control_seq.unsqueeze(0), target_value_tensor)
+    # _, loss = autoencoder.evaluate_gradient(new_control_seq.unsqueeze(0), target_value_tensor,direction)
     # print("prior control seq",new_control_seq,loss)
 
     new_control_seq = acquire_new_data_sgd(new_control_seq)
 
-    # _, loss = autoencoder.evaluate_gradient(new_control_seq.unsqueeze(0), target_value_tensor)
+    # _, loss = autoencoder.evaluate_gradient(new_control_seq.unsqueeze(0), target_value_tensor,direction)
     # print("new control seq",new_control_seq, loss)
     total_reward = 0
     _new_control_seq = new_control_seq.view(control_sequence_time, joints)
@@ -231,17 +235,21 @@ for _ in range(epochs):
         for j in range(t):
             observation, reward, done, info = env.step(action)
             env.render()
-            r += (info["x_velocity"]- np.abs(info["y_velocity"]))/50
-            # r += info["x_velocity"]
-            xvel += info["x_velocity"]/50
+            # r += (info["x_velocity"]- np.abs(info["y_velocity"]))/50
+            r += info["x_velocity"]/50
+            # xvel += info["x_velocity"]/50
         total_reward += r
+
+    x,y,z,w = observation[1:5]
+    direction.fill_(math.atan2(2.0 * (w * x + y * z), 1 - 2 * (x**2 + z**2)))
+    #direction = torch.tensor([direction], dtype=torch.float32, device=device)
     #task_reward_list.append(total_reward)
         
     task_reward_list.append(total_reward)
     print("Epoch {}: Reward {} {}".format(_, total_reward, xvel))
 
     target_value_tensor = torch.tensor([total_reward], dtype=torch.float32, device=device)
-    loss = autoencoder.train_model(new_control_seq.unsqueeze(0), target_value_tensor)
+    loss = autoencoder.train_model(new_control_seq.unsqueeze(0), target_value_tensor, direction)
     losses.append(loss[2])
     obj_loss.append(loss[1])
     encoded_list.append(loss[3].to("cpu").tolist())
