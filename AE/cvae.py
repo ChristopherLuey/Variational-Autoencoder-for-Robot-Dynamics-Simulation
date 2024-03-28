@@ -28,8 +28,8 @@ class CVAEDecoder(nn.Module):
         self.model = nn.Sequential()
         for i in range(len(layer_sizes) - 1):
             self.model.add_module(f"linear_{i}", nn.Linear(layer_sizes[i], layer_sizes[i+1])) 
-            # if i < len(layer_sizes):
-            self.model.add_module(f"activation_{i}", activation())
+            if i <= len(layer_sizes)-2:
+                self.model.add_module(f"activation_{i}", activation())
 
         if output_activation:  # Optional output activation function
             self.model.add_module("output_activation", output_activation())
@@ -53,8 +53,11 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
 
         self.criterion = nn.MSELoss()  # Use Mean Squared Error Loss for non-binary data
         self.last_loss = None
-        self.learning_rate = 1e-1
+        self.learning_rate = 1e-3
         self.optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
+
+        self.reconstruction_weight = 2
+        self.task_weight = 0.5
 
 
     def reparameterize(self, mean, log_variation):
@@ -102,7 +105,7 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
         task_loss = self.criterion(task_pred, target_value)
         
         # Combine the losses
-        combined_loss = 1*reconstruction_loss + task_loss
+        combined_loss = self.reconstruction_weight*reconstruction_loss + self.task_weight*task_loss
         
         # Zero the gradientss
         self.optimizer.zero_grad()
@@ -128,7 +131,7 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
             # task_loss = self.criterion(task_pred, target_value)
             task_loss = -task_pred**2
             # task_loss = (torch.sum(input_batch, dim=1) - target_value) ** 2
-            combined_loss = 1*reconstruction_loss + task_loss
+            combined_loss = self.reconstruction_weight*reconstruction_loss + self.task_weight*task_loss
 
         return (decoded, task_pred), combined_loss
     
@@ -163,10 +166,11 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
             task_loss = task_pred**2
         else:
             task_loss = -task_pred**2
+            # task_loss = 0
 
         # task_loss = (torch.sum(input_batch, dim=1) - target_value) ** 2
         # Combine the losses
-        combined_loss = 1*reconstruction_loss + task_loss
+        combined_loss = self.reconstruction_weight*reconstruction_loss + self.task_weight*task_loss
 
         # Return both decoded output and task prediction, and the combined loss
         return (decoded, task_pred), combined_loss

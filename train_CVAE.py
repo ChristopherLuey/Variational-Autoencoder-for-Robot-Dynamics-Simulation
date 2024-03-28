@@ -107,7 +107,7 @@ new_control_seq.requires_grad_(True)
 render_frame = 1
 direction = torch.tensor([0.0], dtype=torch.float32, device=device)
 
-def acquire_new_data(last_control_seq):
+def acquire_new_data(last_control_seq, autoencoder, target_value_tensor, direction):
     """
     Acquire new data for training the autoencoder.
 
@@ -163,47 +163,85 @@ def acquire_new_data(last_control_seq):
 #             break
 #     return x
 
-
-def acquire_new_data_sgd(last_control_seq, lr=0.01, max_iterations=10, threshold=0.01):
+def acquire_new_data_sgd(last_control_seq, autoencoder, target_value_tensor, direction, learning_rate=1e-3):
     """
-    Acquire new data for training the autoencoder using stochastic gradient descent.
-    
-    Args:
-    - last_control_seq (torch.Tensor): The last control sequence with requires_grad set to True.
-    - lr (float): Learning rate for SGD.
-    - max_iterations (int): Maximum number of iterations for the SGD optimization.
-    - threshold (float): Threshold for gradient norm for early stopping.
-    
+    Acquire new data for training the autoencoder using Stochastic Gradient Descent (SGD).
+
+    Parameters:
+    - last_control_seq: The last control sequence.
+    - autoencoder: The autoencoder model.
+    - target_value_tensor: The target value for the autoencoder to achieve.
+    - direction: The direction for evaluating the autoencoder.
+    - learning_rate: The learning rate for SGD.
+    - num_iterations: The number of iterations to perform SGD.
+
     Returns:
-    - torch.Tensor: The optimized control sequence.
+    - The new control sequence with the lowest autoencoder objective function value after applying SGD.
     """
-    # Ensure last_control_seq requires gradients
-    last_control_seq = last_control_seq.clone().detach().requires_grad_(True).to(device)
-    optimizer = torch.optim.SGD([last_control_seq], lr=lr)
-    
-    for iteration in range(max_iterations):
-        optimizer.zero_grad()
+    # Ensure last_control_seq requires gradient for optimization
+    control_seq = last_control_seq.clone().detach().requires_grad_(True)
 
-        # Use the evaluate function to compute the loss
-        _, loss = autoencoder.evaluate_gradient(last_control_seq.unsqueeze(0), target_value_tensor, direction)
-        
-        # Backward pass to compute gradients
+    for _ in range(samples):
+        # Evaluate the control sequence
+        _, loss = autoencoder.evaluate_gradient(control_seq.unsqueeze(0), target_value_tensor, direction)
+
+        # Zero gradients from the previous iteration
+        if control_seq.grad is not None:
+            control_seq.grad.zero_()
+
+        # Compute gradients
         loss.backward()
 
-        # Update last_control_seq based on gradients
-        optimizer.step()
+        # Update the control sequence with gradient descent
+        with torch.no_grad():
+            control_seq -= learning_rate * control_seq.grad
+            # Optionally: Apply constraints such as clamping
+            control_seq.clamp_(min=-1, max=1)
 
-        # Check gradient norm for early stopping
-        grad_norm = last_control_seq.grad.norm()
-        if grad_norm < threshold:
-            # print(f"Early stopping at iteration {iteration} due to low gradient norm.")
-            break
+    # Detach the optimized sequence from the computational graph
+    optimized_seq = control_seq.detach()
+    return optimized_seq
 
-    return last_control_seq.detach()
+# def acquire_new_data_sgd(last_control_seq, lr=0.01, max_iterations=10, threshold=0.01):
+#     """
+#     Acquire new data for training the autoencoder using stochastic gradient descent.
+    
+#     Args:
+#     - last_control_seq (torch.Tensor): The last control sequence with requires_grad set to True.
+#     - lr (float): Learning rate for SGD.
+#     - max_iterations (int): Maximum number of iterations for the SGD optimization.
+#     - threshold (float): Threshold for gradient norm for early stopping.
+    
+#     Returns:
+#     - torch.Tensor: The optimized control sequence.
+#     """
+#     # Ensure last_control_seq requires gradients
+#     last_control_seq = last_control_seq.clone().detach().requires_grad_(True).to(device)
+#     optimizer = torch.optim.SGD([last_control_seq], lr=lr)
+    
+#     for iteration in range(max_iterations):
+#         optimizer.zero_grad()
+
+#         # Use the evaluate function to compute the loss
+#         _, loss = autoencoder.evaluate_gradient(last_control_seq.unsqueeze(0), target_value_tensor, direction)
+        
+#         # Backward pass to compute gradients
+#         loss.backward()
+
+#         # Update last_control_seq based on gradients
+#         optimizer.step()
+
+#         # Check gradient norm for early stopping
+#         grad_norm = last_control_seq.grad.norm()
+#         if grad_norm < threshold:
+#             # print(f"Early stopping at iteration {iteration} due to low gradient norm.")
+#             break
+
+#     return last_control_seq.detach()
 
 
 clear = np.array([0,0,0,0,0,0,0,0])
-epochs = 500
+epochs = 100
 xvel = 0
 for _ in range(epochs):
 
@@ -219,7 +257,7 @@ for _ in range(epochs):
     # _, loss = autoencoder.evaluate_gradient(new_control_seq.unsqueeze(0), target_value_tensor,direction)
     # print("prior control seq",new_control_seq,loss)
 
-    new_control_seq = acquire_new_data_sgd(new_control_seq)
+    new_control_seq = acquire_new_data(new_control_seq, autoencoder, target_value_tensor, direction)
 
     # _, loss = autoencoder.evaluate_gradient(new_control_seq.unsqueeze(0), target_value_tensor,direction)
     # print("new control seq",new_control_seq, loss)
@@ -234,14 +272,15 @@ for _ in range(epochs):
         t = 10
         for j in range(t):
             observation, reward, done, info = env.step(action)
+            # if args["no_render"] != True:
             env.render()
-            # r += (info["x_velocity"]- np.abs(info["y_velocity"]))/50
-            r += info["x_velocity"]/50
-            # xvel += info["x_velocity"]/50
+            r += (info["x_velocity"] * 2- np.abs(info["y_velocity"]))/50
+            # r += info["x_velocity"]/50
+            xvel += info["x_velocity"]/50
         total_reward += r
 
     x,y,z,w = observation[1:5]
-    direction.fill_(math.atan2(2.0 * (w * x + y * z), 1 - 2 * (x**2 + z**2)))
+    direction.fill_(math.atan2(2.0 * (w * x + y * z), 1 - 2 * (x**2 + z**2))/math.pi)
     #direction = torch.tensor([direction], dtype=torch.float32, device=device)
     #task_reward_list.append(total_reward)
         
@@ -263,6 +302,7 @@ for _ in range(epochs):
     # Check if the episode is done
     if done:
         observation = env.reset()
+        env.step(clear)
 
 env.close()
 
