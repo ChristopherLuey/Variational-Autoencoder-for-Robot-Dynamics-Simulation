@@ -106,6 +106,8 @@ new_control_seq.requires_grad_(True)
 
 render_frame = 1
 direction = torch.tensor([0.0], dtype=torch.float32, device=device)
+direction_prev = torch.tensor([0.0], dtype=torch.float32, device=device)
+
 
 def acquire_new_data(last_control_seq, autoencoder, target_value_tensor, direction):
     """
@@ -125,9 +127,11 @@ def acquire_new_data(last_control_seq, autoencoder, target_value_tensor, directi
         # Evaluate the perturbed sequence without updating the autoencoder weights
         _, loss = autoencoder.evaluate(perturbed_seq.unsqueeze(0), target_value_tensor, direction)
 
-        if loss < lowest_loss:
-            lowest_loss = loss
+        if loss.item() < lowest_loss:
+            lowest_loss = loss.item()
             best_seq = perturbed_seq
+    
+    print("Lowest Loss:", lowest_loss)
 
     return best_seq.detach()  
 
@@ -180,14 +184,17 @@ def acquire_new_data_sgd(last_control_seq, autoencoder, target_value_tensor, dir
     """
     # Ensure last_control_seq requires gradient for optimization
     control_seq = last_control_seq.clone().detach().requires_grad_(True)
+    #control_seq.grad.zero_()
+    lowest_loss = float('inf')
+    best_seq = control_seq.clone().detach()
 
     for _ in range(samples):
         # Evaluate the control sequence
         _, loss = autoencoder.evaluate_gradient(control_seq.unsqueeze(0), target_value_tensor, direction)
 
-        # Zero gradients from the previous iteration
-        if control_seq.grad is not None:
-            control_seq.grad.zero_()
+        if loss.item() < lowest_loss:
+            lowest_loss = loss.item()
+            best_seq = control_seq.clone().detach()
 
         # Compute gradients
         loss.backward()
@@ -198,9 +205,10 @@ def acquire_new_data_sgd(last_control_seq, autoencoder, target_value_tensor, dir
             # Optionally: Apply constraints such as clamping
             control_seq.clamp_(min=-1, max=1)
 
-    # Detach the optimized sequence from the computational graph
-    optimized_seq = control_seq.detach()
-    return optimized_seq
+    # # Detach the optimized sequence from the computational graph
+    # optimized_seq = control_seq.detach()
+    print("Lowest Loss:", lowest_loss)
+    return best_seq
 
 # def acquire_new_data_sgd(last_control_seq, lr=0.01, max_iterations=10, threshold=0.01):
 #     """
@@ -259,8 +267,10 @@ for _ in range(epochs):
 
     new_control_seq = acquire_new_data(new_control_seq, autoencoder, target_value_tensor, direction)
 
-    # _, loss = autoencoder.evaluate_gradient(new_control_seq.unsqueeze(0), target_value_tensor,direction)
-    # print("new control seq",new_control_seq, loss)
+    __, loss = autoencoder.evaluate_gradient(new_control_seq.unsqueeze(0), target_value_tensor,direction)
+    __, loss2 = autoencoder.evaluate(new_control_seq.unsqueeze(0), target_value_tensor, direction)
+    print("New Loss:", loss.item(), loss2.item())
+    
     total_reward = 0
     _new_control_seq = new_control_seq.view(control_sequence_time, joints)
 
@@ -274,13 +284,16 @@ for _ in range(epochs):
             observation, reward, done, info = env.step(action)
             # if args["no_render"] != True:
             env.render()
-            r += (info["x_velocity"] * 2- np.abs(info["y_velocity"]))/50
-            # r += info["x_velocity"]/50
-            xvel += info["x_velocity"]/50
+            # r += (info["x_velocity"] * 2- np.abs(info["y_velocity"]))/50
+            r += info["x_velocity"]/25
+            xvel += info["x_velocity"]/25
         total_reward += r
 
     x,y,z,w = observation[1:5]
-    direction.fill_(math.atan2(2.0 * (w * x + y * z), 1 - 2 * (x**2 + z**2))/math.pi)
+    dir = math.atan2(2.0 * (w * x + y * z), 1 - 2 * (x**2 + z**2))/math.pi
+    print(dir)
+    direction.fill_(dir - direction_prev[0])
+    direction_prev.fill_(dir)
     #direction = torch.tensor([direction], dtype=torch.float32, device=device)
     #task_reward_list.append(total_reward)
         

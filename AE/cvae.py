@@ -56,8 +56,8 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
         self.learning_rate = 1e-3
         self.optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
 
-        self.reconstruction_weight = 2
-        self.task_weight = 0.5
+        self.reconstruction_weight = 1
+        self.task_weight = 5
 
 
     def reparameterize(self, mean, log_variation):
@@ -105,7 +105,7 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
         task_loss = self.criterion(task_pred, target_value)
         
         # Combine the losses
-        combined_loss = self.reconstruction_weight*reconstruction_loss + self.task_weight*task_loss
+        combined_loss = reconstruction_loss + task_loss
         
         # Zero the gradientss
         self.optimizer.zero_grad()
@@ -119,6 +119,7 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
 
     def evaluate(self, input_batch, target_value, condition):
         self.eval()
+        target_value = target_value.unsqueeze(1) if target_value.dim() == 1 else target_value
         with torch.no_grad():
             decoded, task_pred, encoded, mean, log_variation = self.forward(input_batch, condition)
         
@@ -129,7 +130,12 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
             task_pred = self.task_network(encoded)
             
             # task_loss = self.criterion(task_pred, target_value)
-            task_loss = -task_pred**2
+            if task_pred < 0:
+
+                task_loss = -task_pred**2
+            else:
+                task_loss = task_pred**2
+            # task_loss = 0
             # task_loss = (torch.sum(input_batch, dim=1) - target_value) ** 2
             combined_loss = self.reconstruction_weight*reconstruction_loss + self.task_weight*task_loss
 
@@ -163,9 +169,9 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
         # task_loss = self.criterion(task_pred, target_value)
         if task_pred < 0:
 
-            task_loss = task_pred**2
-        else:
             task_loss = -task_pred**2
+        else:
+            task_loss = task_pred**2
             # task_loss = 0
 
         # task_loss = (torch.sum(input_batch, dim=1) - target_value) ** 2
