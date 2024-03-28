@@ -76,7 +76,7 @@ register(
 
 env = gym.make('Ant-v3', terminate_when_unhealthy=True, healthy_z_range=(0.3,5), ctrl_cost_weight=0, contact_cost_weight=0, healthy_reward=0)
 observation = env.reset()
-joints = 8
+joints = config["joints"]
 
 from AE.cvae import AugmentedConditionalVariationalAutoencoder
 
@@ -92,13 +92,14 @@ samples = config["samples"]
 perturbation_strength = config["perturbation_strength"]
 control_sequence_time = config["input_size"]
 control_sequence_length = config["input_size"]*joints
-target_value_tensor = torch.tensor([0], dtype=torch.float32, device=device)
+target_value_tensor = torch.tensor(0, dtype=torch.float32, device=device)
 
 losses = []
 obj_loss = []
 new_control_seq_values = []
 task_reward_list = []
 encoded_list = []
+decoded_list = []
 
 new_control_seq = (2*torch.rand(control_sequence_length)-1).to(device)
 new_control_seq.requires_grad_(True)
@@ -125,7 +126,7 @@ def acquire_new_data(last_control_seq, autoencoder, target_value_tensor, directi
         perturbed_seq = torch.clamp(last_control_seq + perturbation, min=-1, max=1).to(device)
 
         # Evaluate the perturbed sequence without updating the autoencoder weights
-        _, loss = autoencoder.evaluate(perturbed_seq.unsqueeze(0), target_value_tensor, direction)
+        _, loss, reconstruction_loss, task_loss = autoencoder.evaluate(perturbed_seq, target_value_tensor, direction)
 
         if loss.item() < lowest_loss:
             lowest_loss = loss.item()
@@ -133,7 +134,7 @@ def acquire_new_data(last_control_seq, autoencoder, target_value_tensor, directi
     
     print("Lowest Loss:", lowest_loss)
 
-    return best_seq.detach()  
+    return best_seq.detach(), lowest_loss
 
 
 # def acquire_new_data_grad_descent(last_control_seq):
@@ -190,7 +191,7 @@ def acquire_new_data_sgd(last_control_seq, autoencoder, target_value_tensor, dir
 
     for _ in range(samples):
         # Evaluate the control sequence
-        _, loss = autoencoder.evaluate_gradient(control_seq.unsqueeze(0), target_value_tensor, direction)
+        _, loss, reconstruction_loss, task_loss = autoencoder.evaluate_gradient(control_seq, target_value_tensor, direction)
 
         if loss.item() < lowest_loss:
             lowest_loss = loss.item()
@@ -208,7 +209,7 @@ def acquire_new_data_sgd(last_control_seq, autoencoder, target_value_tensor, dir
     # # Detach the optimized sequence from the computational graph
     # optimized_seq = control_seq.detach()
     print("Lowest Loss:", lowest_loss)
-    return best_seq
+    return best_seq, lowest_loss
 
 # def acquire_new_data_sgd(last_control_seq, lr=0.01, max_iterations=10, threshold=0.01):
 #     """
@@ -264,12 +265,13 @@ for _ in range(epochs):
     #     target_value_tensor = target_value_tensor
     # _, loss = autoencoder.evaluate_gradient(new_control_seq.unsqueeze(0), target_value_tensor,direction)
     # print("prior control seq",new_control_seq,loss)
+    
+    new_control_seq, l = acquire_new_data(new_control_seq, autoencoder, target_value_tensor, direction)
+    __, loss, reconstruction_loss, task_loss = autoencoder.evaluate_gradient(new_control_seq, target_value_tensor, direction)
+    __, loss2, __, __ = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
+    __, loss3, __, __ = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
 
-    new_control_seq = acquire_new_data(new_control_seq, autoencoder, target_value_tensor, direction)
-
-    __, loss = autoencoder.evaluate_gradient(new_control_seq.unsqueeze(0), target_value_tensor,direction)
-    __, loss2 = autoencoder.evaluate(new_control_seq.unsqueeze(0), target_value_tensor, direction)
-    print("New Loss:", loss.item(), loss2.item())
+    print("New Loss:", l, loss.item(), loss2.item(), loss3.item(), reconstruction_loss.item(), task_loss.item())
     
     total_reward = 0
     _new_control_seq = new_control_seq.view(control_sequence_time, joints)
@@ -300,12 +302,14 @@ for _ in range(epochs):
     task_reward_list.append(total_reward)
     print("Epoch {}: Reward {} {}".format(_, total_reward, xvel))
 
-    target_value_tensor = torch.tensor([total_reward], dtype=torch.float32, device=device)
-    loss = autoencoder.train_model(new_control_seq.unsqueeze(0), target_value_tensor, direction)
-    losses.append(loss[2])
+    target_value_tensor = torch.tensor(total_reward, dtype=torch.float32, device=device)
+    loss = autoencoder.train_model(new_control_seq, target_value_tensor, direction)
+    losses.append(loss[0])
     obj_loss.append(loss[1])
     encoded_list.append(loss[3].to("cpu").tolist())
+    decoded_list.append(loss[4].to("cpu").tolist())
     new_control_seq_values.append(new_control_seq.to("cpu").tolist()) 
+
     # for i in range(5):
     #     observation, reward, done, info = env.step(clear)
     #     env.render()
@@ -319,7 +323,7 @@ for _ in range(epochs):
 
 env.close()
 
-fig, axes = plt.subplots(1, 3, figsize=(12, 6))
+fig, axes = plt.subplots(1, 4, figsize=(12, 6))
 
 # Plot training loss on the first subplot
 axes[0].plot(range(1, epochs + 1), losses, label="Training Loss")
@@ -343,6 +347,13 @@ axes[2].set_xlabel('Epoch')
 axes[2].set_ylabel('Value')
 axes[2].set_title('New Control Seq Values Over Time')
 #axes[2].legend()
+
+new_control_seq_values_transposed = list(zip(*decoded_list))
+for seq_index, seq_values in enumerate(new_control_seq_values_transposed):
+    axes[3].plot(range(1, epochs + 1), seq_values, label=f"Seq {seq_index + 1}")
+axes[3].set_xlabel('Epoch')
+axes[3].set_ylabel('Value')
+axes[3].set_title('New Control Seq Values Over Time')
 
 plt.tight_layout()
 plt.show()

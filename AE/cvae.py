@@ -2,6 +2,10 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
+import yaml
+
+# from torchviz import make_dot
+
 
 
 class CVAEEncoder(nn.Module):
@@ -27,12 +31,12 @@ class CVAEDecoder(nn.Module):
         super(CVAEDecoder, self).__init__()
         self.model = nn.Sequential()
         for i in range(len(layer_sizes) - 1):
-            self.model.add_module(f"linear_{i}", nn.Linear(layer_sizes[i], layer_sizes[i+1])) 
-            if i <= len(layer_sizes)-2:
+            self.model.add_module(f"linear_{i}", nn.Linear(layer_sizes[i], layer_sizes[i+1]))
+            if i < len(layer_sizes) - 2: 
                 self.model.add_module(f"activation_{i}", activation())
+        if output_activation is not None:
+            self.model.add_module("output_activation", output_activation)
 
-        if output_activation:  # Optional output activation function
-            self.model.add_module("output_activation", output_activation())
 
     def forward(self, x):
         return self.model(x)
@@ -64,26 +68,22 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
         std = torch.exp(0.5 * log_variation) # convert log to non-log
         eps = torch.randn_like(std)
         return mean + eps * std
+        # return mean
+
+    def reparameterize_evaluate(self,mean,log_variation):
+        std = torch.exp(0.5 * log_variation) # convert log to non-log
+        eps = torch.randn_like(std)
+        # return mean + eps * std
+        return mean
 
 
-    def forward(self, x, condition):
-        x=x[0]
-        # print(torch.cat((x, condition), dim=-1))
+    def forward(self, x, condition, evaluating):
         mean, log_variation = self.encoder(torch.cat((x, condition), dim=-1))
-        latent_representation = self.reparameterize(mean, log_variation)
+        latent_representation = evaluating(mean, log_variation)
         task_pred = self.task_network(mean)
         decoded = self.decoder(torch.cat((latent_representation, condition), dim=-1))
         return decoded, task_pred, latent_representation, mean, log_variation
 
-    # def train_model(self, input_batch):
-    #     self.train()
-    #     output = self.forward_autoencoder(input_batch)
-    #     loss = self.criterion(output, input_batch)
-    #     self.optimizer.zero_grad()
-    #     loss.backward()
-    #     self.optimizer.step()
-    #     self.last_loss = loss.item()
-    #     return self.last_loss
 
     def loss_function(self,input_batch, decoded, mean, log_variation):
         reproduction_loss = self.criterion(decoded, input_batch)
@@ -93,9 +93,12 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
     
     def train_model(self, input_batch, target_value, condition):
         self.train()
+        self.encoder.train()
+        self.decoder.train()
+        self.task_network.train()
         
         # Forward pass through the autoencoder
-        decoded, task_pred, encoded, mean, log_variation = self.forward(input_batch, condition)
+        decoded, task_pred, encoded, mean, log_variation = self.forward(input_batch, condition, self.reparameterize)
 
         # Calculate the reconstruction loss
         reconstruction_loss = self.loss_function(input_batch, decoded, mean, log_variation)
@@ -115,13 +118,15 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
         self.optimizer.step()
         
         self.last_loss = combined_loss.item()
-        return (reconstruction_loss.item(), task_loss.item(), self.last_loss, encoded)
+        return (reconstruction_loss.item(), task_loss.item(), self.last_loss, encoded, decoded)
 
     def evaluate(self, input_batch, target_value, condition):
         self.eval()
-        target_value = target_value.unsqueeze(1) if target_value.dim() == 1 else target_value
+        self.encoder.eval()
+        self.decoder.eval()
+        self.task_network.eval()
         with torch.no_grad():
-            decoded, task_pred, encoded, mean, log_variation = self.forward(input_batch, condition)
+            decoded, task_pred, encoded, mean, log_variation = self.forward(input_batch, condition, self.reparameterize_evaluate)
         
             # Calculate the reconstruction loss
             reconstruction_loss = self.loss_function(input_batch, decoded, mean, log_variation)
@@ -139,7 +144,7 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
             # task_loss = (torch.sum(input_batch, dim=1) - target_value) ** 2
             combined_loss = self.reconstruction_weight*reconstruction_loss + self.task_weight*task_loss
 
-        return (decoded, task_pred), combined_loss
+        return (decoded, task_pred), combined_loss, reconstruction_loss, task_loss
     
 
     def evaluate_gradient(self, input_batch, target_value, condition):
@@ -154,11 +159,13 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
         - Tuple[torch.Tensor, torch.Tensor]: A tuple containing the decoded output and the task prediction.
         - torch.Tensor: The combined loss (reconstruction loss + task loss).
         """
-        self.eval()
-        # Ensure target_value has the correct shape for criterion comparison
-        target_value = target_value.unsqueeze(1) if target_value.dim() == 1 else target_value
         
-        decoded, task_pred, encoded, mean, log_variation = self.forward(input_batch, condition)
+        self.eval()
+        self.encoder.eval()
+        self.decoder.eval()
+        self.task_network.eval()
+        
+        decoded, task_pred, encoded, mean, log_variation = self.forward(input_batch, condition, self.reparameterize_evaluate)
     
         # Calculate the reconstruction loss
         reconstruction_loss = self.loss_function(input_batch, decoded, mean, log_variation)
@@ -179,7 +186,7 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
         combined_loss = self.reconstruction_weight*reconstruction_loss + self.task_weight*task_loss
 
         # Return both decoded output and task prediction, and the combined loss
-        return (decoded, task_pred), combined_loss
+        return (decoded, task_pred), combined_loss, reconstruction_loss, task_loss
 
     @property
     def objective_function_value(self):
@@ -201,3 +208,26 @@ class TaskNetwork(nn.Module):
         return self.model(x)
 
 
+
+
+if __name__ == "__main__":
+
+    config_path = f'./config/AE.yaml'
+
+    with open(config_path, 'r') as f:
+        config_dict = yaml.safe_load(f)
+        config = config_dict["AntEnv_v3"]
+
+    joints = config["joints"]
+
+    model_kwargs = {'input_size': config['input_size']*joints, 
+                    'latent_size': config['latent_size'],
+                    'encoder_layer_sizes': config['encoder_layer_sizes'],
+                    'decoder_layer_sizes': config['decoder_layer_sizes'],
+                    'task_layer_sizes': config["task_layer_sizes"],
+                    'condition_size': config["condition_size"]}
+
+
+
+    model = AugmentedConditionalVariationalAutoencoder(**model_kwargs)
+    print(model)
