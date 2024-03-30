@@ -7,5 +7,5 @@ AntEnv_v3:
     task_layer_sizes: [4,3,2,1]
     condition_size: 1
     samples: 100
-    perturbation_strength: 0.5
+    perturbation_strength: 0.2
     

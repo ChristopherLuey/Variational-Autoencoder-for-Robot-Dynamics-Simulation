@@ -128,8 +128,8 @@ def acquire_new_data(last_control_seq, autoencoder, target_value_tensor, directi
         # Evaluate the perturbed sequence without updating the autoencoder weights
         _, loss, reconstruction_loss, task_loss = autoencoder.evaluate(perturbed_seq, target_value_tensor, direction)
 
-        if loss.item() < lowest_loss:
-            lowest_loss = loss.item()
+        if loss < lowest_loss:
+            lowest_loss = loss
             best_seq = perturbed_seq
     
     print("Lowest Loss:", lowest_loss)
@@ -247,10 +247,10 @@ def acquire_new_data_sgd(last_control_seq, autoencoder, target_value_tensor, dir
 #             break
 
 #     return last_control_seq.detach()
-
+torch.autograd.set_detect_anomaly(True)
 
 clear = np.array([0,0,0,0,0,0,0,0])
-epochs = 100
+epochs = 1000
 xvel = 0
 for _ in range(epochs):
 
@@ -267,12 +267,12 @@ for _ in range(epochs):
     # print("prior control seq",new_control_seq,loss)
     
     new_control_seq, l = acquire_new_data(new_control_seq, autoencoder, target_value_tensor, direction)
-    __, loss, reconstruction_loss, task_loss = autoencoder.evaluate_gradient(new_control_seq, target_value_tensor, direction)
-    __, loss2, __, __ = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
+    # __, loss, reconstruction_loss, task_loss = autoencoder.evaluate_gradient(new_control_seq, target_value_tensor, direction)
+    __, loss2, reconstruction_loss, task_loss = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
     __, loss3, __, __ = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
 
-    print("New Loss:", l, loss.item(), loss2.item(), loss3.item(), reconstruction_loss.item(), task_loss.item())
-    
+    print("New Loss:", l, loss2, loss3, reconstruction_loss, task_loss)
+
     total_reward = 0
     _new_control_seq = new_control_seq.view(control_sequence_time, joints)
 
@@ -293,6 +293,7 @@ for _ in range(epochs):
 
     x,y,z,w = observation[1:5]
     dir = math.atan2(2.0 * (w * x + y * z), 1 - 2 * (x**2 + z**2))/math.pi
+    dir=0
     print(dir)
     direction.fill_(dir - direction_prev[0])
     direction_prev.fill_(dir)
@@ -306,7 +307,7 @@ for _ in range(epochs):
     loss = autoencoder.train_model(new_control_seq, target_value_tensor, direction)
     losses.append(loss[0])
     obj_loss.append(loss[1])
-    encoded_list.append(loss[3].to("cpu").tolist())
+    encoded_list.append(loss[5].to("cpu").tolist())
     decoded_list.append(loss[4].to("cpu").tolist())
     new_control_seq_values.append(new_control_seq.to("cpu").tolist()) 
 
