@@ -74,7 +74,7 @@ register(
 )
 
 
-env = gym.make('Ant-v3', terminate_when_unhealthy=True, healthy_z_range=(0.3,5), ctrl_cost_weight=0, contact_cost_weight=0, healthy_reward=0)
+env = gym.make('CustomAnt-v3', terminate_when_unhealthy=True, healthy_z_range=(0.3,5), ctrl_cost_weight=0, contact_cost_weight=0, healthy_reward=0)
 observation = env.reset()
 joints = config["joints"]
 
@@ -100,6 +100,8 @@ new_control_seq_values = []
 task_reward_list = []
 encoded_list = []
 decoded_list = []
+direction_list = []
+variation_list = []
 
 new_control_seq = (2*torch.rand(control_sequence_length)-1).to(device)
 new_control_seq.requires_grad_(True)
@@ -107,6 +109,8 @@ new_control_seq.requires_grad_(True)
 
 render_frame = 1
 direction = torch.tensor([0.0], dtype=torch.float32, device=device)
+direction_task = torch.tensor([0.0], dtype=torch.float32, device=device)
+
 direction_prev = torch.tensor([0.0], dtype=torch.float32, device=device)
 
 
@@ -119,6 +123,7 @@ def acquire_new_data(last_control_seq, autoencoder, target_value_tensor, directi
     """
     lowest_loss = float('inf')
     best_seq = None
+    prediction = None
 
     for _ in range(samples):
         # Perturb the control sequence by a random vector
@@ -126,15 +131,16 @@ def acquire_new_data(last_control_seq, autoencoder, target_value_tensor, directi
         perturbed_seq = torch.clamp(last_control_seq + perturbation, min=-1, max=1).to(device)
 
         # Evaluate the perturbed sequence without updating the autoencoder weights
-        _, loss, reconstruction_loss, task_loss = autoencoder.evaluate(perturbed_seq, target_value_tensor, direction)
+        _prediction, loss, reconstruction_loss, task_loss = autoencoder.evaluate(perturbed_seq, target_value_tensor, direction)
 
         if loss < lowest_loss:
             lowest_loss = loss
             best_seq = perturbed_seq
+            prediction = _prediction
     
     print("Lowest Loss:", lowest_loss)
 
-    return best_seq.detach(), lowest_loss
+    return prediction, best_seq.detach(), lowest_loss
 
 
 # def acquire_new_data_grad_descent(last_control_seq):
@@ -250,7 +256,7 @@ def acquire_new_data_sgd(last_control_seq, autoencoder, target_value_tensor, dir
 torch.autograd.set_detect_anomaly(True)
 
 clear = np.array([0,0,0,0,0,0,0,0])
-epochs = 1000
+epochs = 50
 xvel = 0
 for _ in range(epochs):
 
@@ -266,12 +272,17 @@ for _ in range(epochs):
     # _, loss = autoencoder.evaluate_gradient(new_control_seq.unsqueeze(0), target_value_tensor,direction)
     # print("prior control seq",new_control_seq,loss)
     
-    new_control_seq, l = acquire_new_data(new_control_seq, autoencoder, target_value_tensor, direction)
+    prediction1, new_control_seq, l = acquire_new_data(new_control_seq, autoencoder, target_value_tensor, direction)
     # __, loss, reconstruction_loss, task_loss = autoencoder.evaluate_gradient(new_control_seq, target_value_tensor, direction)
-    __, loss2, reconstruction_loss, task_loss = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
+    prediction2, loss2, reconstruction_loss, task_loss = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
     __, loss3, __, __ = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
 
-    print("New Loss:", l, loss2, loss3, reconstruction_loss, task_loss)
+    print("Epoch {}:\n\tNew Loss:".format(_), loss3)
+    print("\tReconstruction Loss:", reconstruction_loss)
+    print("\tTask Loss:", task_loss)
+    print("\tDecoded:", prediction1[0])
+    print("\tInput:", new_control_seq)
+    print("\tExpected Reward:", prediction1[1])
 
     total_reward = 0
     _new_control_seq = new_control_seq.view(control_sequence_time, joints)
@@ -286,30 +297,40 @@ for _ in range(epochs):
             observation, reward, done, info = env.step(action)
             # if args["no_render"] != True:
             env.render()
-            # r += (info["x_velocity"] * 2- np.abs(info["y_velocity"]))/50
-            r += info["x_velocity"]/25
-            xvel += info["x_velocity"]/25
+            r += (info["x_velocity"] * 2- np.abs(info["y_velocity"]))/50
+            # r += info["x_velocity"]/25
+            xvel += info["x_velocity"]/50
         total_reward += r
 
     x,y,z,w = observation[1:5]
-    dir = math.atan2(2.0 * (w * x + y * z), 1 - 2 * (x**2 + z**2))/math.pi
-    dir=0
-    print(dir)
+    dir = math.atan2(2.0 * (w * x + y * z), 1 - 2 * (x**2 + z**2))/(2*math.pi)
+    # direction_task.fill_(dir)
+    # dir=0
     direction.fill_(dir - direction_prev[0])
+    direction_list.append(dir - direction_prev[0])
+
     direction_prev.fill_(dir)
+    # direction.fill_(dir)
+
     #direction = torch.tensor([direction], dtype=torch.float32, device=device)
     #task_reward_list.append(total_reward)
         
     task_reward_list.append(total_reward)
-    print("Epoch {}: Reward {} {}".format(_, total_reward, xvel))
+    print("\tReward {} {}".format(total_reward, xvel))
 
     target_value_tensor = torch.tensor(total_reward, dtype=torch.float32, device=device)
     loss = autoencoder.train_model(new_control_seq, target_value_tensor, direction)
+
+    print("\tReconstruction Loss from Training:", loss[0])
+    print("\tTask Loss from Training:", loss[1])
+    print("\tCombined Loss:", loss[2])
+
     losses.append(loss[0])
     obj_loss.append(loss[1])
     encoded_list.append(loss[5].to("cpu").tolist())
     decoded_list.append(loss[4].to("cpu").tolist())
     new_control_seq_values.append(new_control_seq.to("cpu").tolist()) 
+    variation_list.append(loss[6])
 
     # for i in range(5):
     #     observation, reward, done, info = env.step(clear)
@@ -362,18 +383,69 @@ plt.show()
 
 plt.plot(range(1, epochs + 1),task_reward_list)
 plt.show()
+print(encoded_list)
+print(variation_list)
 
+# Convert log variance to standard deviation for shading
+std_dev_list = [torch.exp(0.5 * lv).cpu().detach().numpy() for lv in variation_list]
+
+# Assuming the structure and size of encoded_list matches with log_var_list for the purpose of this demonstration
+
+# Transposing lists to work with sequences across dimensions
 encoded_list_transposed = list(zip(*encoded_list))
+std_dev_list_transposed = list(zip(*std_dev_list))
 
 # Create a new figure for the plot
 plt.figure(figsize=(10, 6))
 
-# Plot each sequence in the encoded list
-for seq_index, seq_values in enumerate(encoded_list_transposed):
-    plt.plot(range(1, len(seq_values) + 1), seq_values, label=f"Seq {seq_index + 1}")
+# Plot each sequence in the encoded list and add variance shading
+for dim_index, (dim_values, dim_std_devs) in enumerate(zip(encoded_list_transposed, std_dev_list_transposed)):
+    _epoch = np.arange(1, len(dim_values) + 1)
+    dim_values = np.array(dim_values)
+    dim_std_devs = np.array(dim_std_devs)
+
+    # Plot the dimension values
+    plt.plot(_epoch, dim_values, label=f"Dimension {dim_index + 1}")
+
+    # Calculate upper and lower bounds for the shaded area using standard deviation
+    upper_bounds = dim_values + dim_std_devs
+    lower_bounds = dim_values - dim_std_devs
+
+    # Add shaded area to represent variance
+    plt.fill_between(_epoch, lower_bounds, upper_bounds, alpha=0.2)
+
 
 plt.xlabel('Epoch')
 plt.ylabel('Encoded Value')
 plt.title('Encoded Sequence Values Over Time')
 plt.legend()
+plt.show()
+
+for seq_index, seq_values in enumerate(encoded_list_transposed):
+    plt.plot(range(1, epochs + 1), seq_values, label=f"Seq {seq_index + 1}")
+plt.show()
+
+# Plot objective loss on the second subplot
+plt.plot(range(1, epochs + 1), direction_list, label="Direction")
+plt.show()
+
+# Convert log_variances to numpy arrays and calculate standard deviations
+std_devs = np.array([torch.exp(0.5 * lv).cpu().detach().numpy() for lv in variation_list])
+
+# Calculate upper and lower bounds for shading
+print(encoded_list)
+means = np.array(encoded_list)
+upper_bounds = means + std_devs
+lower_bounds = means - std_devs
+
+# Plotting
+plt.figure(figsize=(10, 6))
+x = np.arange(means.shape[1])  # Assuming x-axis represents the dimensionality of the encoded space
+for i in range(means.shape[0]):
+    plt.plot(x, means[i], '-o')  # Plot mean values
+    plt.fill_between(x, lower_bounds[i], upper_bounds[i], alpha=0.2)  # Plot shaded area for variance
+
+plt.title("Encoded Values with Variance Shading")
+plt.xlabel("Dimension")
+plt.ylabel("Encoded Value")
 plt.show()

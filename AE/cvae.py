@@ -73,7 +73,7 @@ class BasicAutoencoder(nn.Module):
     def loss_function(self, input_batch, decoded, mean, log_variation):
         reproduction_loss = self.criterion(decoded, input_batch)
         # reproduction_loss = nn.functional.mse_loss(decoded, input_batch[0], reduction='sum')
-        KLD = -0.0 * torch.sum(1+ log_variation - mean.pow(2) - log_variation.exp())
+        KLD = -0.5 * torch.sum(1+ log_variation - mean.pow(2) - log_variation.exp())
         return reproduction_loss + KLD
 
     def train_model(self, input_batch, condition):
@@ -108,6 +108,8 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
         # Define task network
 
         self.autoencoder = BasicAutoencoder(input_size, latent_size, encoder_layer_sizes, decoder_layer_sizes, condition_size)
+
+        task_layer_sizes[0] = task_layer_sizes[0] + condition_size
         self.task_network = TaskNetwork(latent_size, task_layer_sizes)
 
         self.criterion = nn.MSELoss()  # Use Mean Squared Error Loss for non-binary data
@@ -116,8 +118,8 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
         self.optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
         self.optimizer_autoencoder = optim.Adam(self.parameters(), lr=self.learning_rate)
 
-        self.reconstruction_weight = 1
-        self.task_weight = 5
+        self.reconstruction_weight = 4
+        self.task_weight = .3
 
 
     # def reparameterize(self, mean, log_variation):
@@ -176,9 +178,10 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
 
     def train_model(self,input_batch, target_value, condition):
         self.train()
+
         reconstruction_loss, decoded, latent_representation, mean, log_variation = self.autoencoder.train_model(input_batch, condition)
 
-        task_loss, task_pred = self.task_network.train_model(latent_representation.clone().detach(), target_value)
+        task_loss, task_pred = self.task_network.train_model(latent_representation.clone().detach(), target_value, condition.clone().detach())
 
         return (reconstruction_loss, task_loss, reconstruction_loss+task_loss, latent_representation, decoded, mean, log_variation)
 
@@ -225,8 +228,20 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
         self.task_network.eval()
         with torch.no_grad():
             reconstruction_loss, decoded, latent_representation, mean, log_variation = self.autoencoder.evaluate(input_batch, condition)
-            task_loss, task_pred = self.task_network.evaluate(latent_representation)
+            task_loss, task_pred = self.task_network.evaluate(latent_representation, condition)
             combined_loss = self.reconstruction_weight*reconstruction_loss + self.task_weight*task_loss
+        return (decoded, task_pred), combined_loss, reconstruction_loss, task_loss
+
+    
+
+
+    def evaluate_gradient(self, input_batch, target_value, condition):
+        self.eval()
+        self.autoencoder.eval()
+        self.task_network.eval()
+        reconstruction_loss, decoded, latent_representation, mean, log_variation = self.autoencoder.evaluate(input_batch, condition)
+        task_loss, task_pred = self.task_network.evaluate(latent_representation, condition)
+        combined_loss = self.reconstruction_weight*reconstruction_loss + self.task_weight*task_loss
         return (decoded, task_pred), combined_loss, reconstruction_loss, task_loss
     
 
@@ -283,34 +298,33 @@ class TaskNetwork(nn.Module):
         # self.fc = nn.Linear(latent_size, 1)
 
         for i in range(len(task_layer_sizes) - 1):
-            self.model.add_module(f"linear_{i}", nn.Linear(task_layer_sizes[i], task_layer_sizes[i+1]))
+            self.model.add_module(f"linear_{i}", nn.Linear(task_layer_sizes[i], task_layer_sizes[i+1], bias=True))
             if i < len(task_layer_sizes) - 2:  # Activation after each layer except the last
                 self.model.add_module(f"activation_{i}", activation())
 
         self.criterion = nn.MSELoss()
-        self.optimizer = optim.Adam(self.parameters(), lr=1e-1)
-
+        self.optimizer = optim.Adam(self.parameters(), lr=1e-2)
 
     def forward(self, x):
         return self.model(x)
 
-    def train_model(self, latent_space, target_value):
+    def train_model(self, latent_space, target_value, condition):
         self.train()
         self.optimizer.zero_grad()
-        task_pred = self.model(latent_space)
+        task_pred = self.forward(torch.cat((latent_space, condition), dim=-1))
         loss = self.criterion(task_pred, target_value)
         loss.backward()
         self.optimizer.step()
         return loss.item(), task_pred
 
-    def evaluate(self, latent_space):
+    def evaluate(self, latent_space, condition):
         self.eval()            
-        task_pred = self.model(latent_space)
+        task_pred = self.forward(torch.cat((latent_space, condition), dim=-1))
         if task_pred < 0:
-            task_loss = -task_pred
+            task_loss = -task_pred.item()
         else:
-            task_loss = task_pred
-        return task_loss.item(), task_pred
+            task_loss = -task_pred.item()
+        return task_loss, task_pred
 
 
 if __name__ == "__main__":
