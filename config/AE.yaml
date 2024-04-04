@@ -4,9 +4,9 @@ AntEnv_v3:
     latent_size: 20
     encoder_layer_sizes: [50,40,30,20]
     decoder_layer_sizes: [20,30,40,50]
-    task_layer_sizes: [20,6,4,3,2,1]
+    task_layer_sizes: [20,1]
 #    task_layer_sizes: [1,1]
     condition_size: 1
     samples: 100
     perturbation_strength: 0.2
-    epochs: 1000
+    epochs: 500

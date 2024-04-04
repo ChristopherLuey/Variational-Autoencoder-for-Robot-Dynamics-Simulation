@@ -128,6 +128,10 @@ def acquire_new_data(last_control_seq, autoencoder, target_value_tensor, directi
     prediction = None
     target_value_tensor = target_value_tensor.clone().detach()
 
+
+    if (target_value_tensor.item() < 0):
+        target_value_tensor.fill_(-target_value_tensor.item())
+
     for _ in range(samples):
         # Perturb the control sequence by a random vector
         perturbation = (torch.rand_like(last_control_seq)-0.5) * perturbation_strength
@@ -220,6 +224,15 @@ def acquire_new_data_sgd(last_control_seq, autoencoder, target_value_tensor, dir
     print("Lowest Loss:", lowest_loss)
     return best_seq, lowest_loss
 
+def smooth_tensor(tensor, box_pts):
+    box = torch.ones(box_pts) / box_pts
+    # Ensure tensor is on CPU for numpy compatibility if needed and convert to numpy for convolution
+    tensor_np = tensor.cpu().squeeze().numpy()
+    smoothed_np = np.convolve(tensor_np, box, mode='same')
+    # Convert back to tensor
+    smoothed_tensor = torch.tensor(smoothed_np, dtype=torch.float32).unsqueeze(1)
+    return smoothed_tensor
+
 # def acquire_new_data_sgd(last_control_seq, lr=0.01, max_iterations=10, threshold=0.01):
 #     """
 #     Acquire new data for training the autoencoder using stochastic gradient descent.
@@ -262,7 +275,7 @@ clear = np.array([0,0,0,0,0,0,0,0])
 epochs = config['epochs']
 xvel = 0
 data_con = np.zeros((epochs,control_sequence_length))
-for _ in range(epochs):
+for epoch in range(epochs):
 
     # if epochs % render_frame == 0:  # Conditional render to reduce computation load
     #     env.render()
@@ -281,7 +294,7 @@ for _ in range(epochs):
     prediction2, loss2, reconstruction_loss, task_loss = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
     __, loss3, __, __ = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
 
-    print("Epoch {}:\n\tNew Loss:".format(_), loss3)
+    print("Epoch {}:\n\tNew Loss:".format(epoch), loss3)
     print("\tReconstruction Loss:", reconstruction_loss)
     print("\tTask Loss:", task_loss)
     print("\tLoss2:", loss2)
@@ -303,8 +316,9 @@ for _ in range(epochs):
             observation, reward, done, info = env.step(action)
             # if args["no_render"] != True:
             # r += (info["x_velocity"] * 2- np.abs(info["y_velocity"]))
-            r += info["x_velocity"]/50
-            xvel += info["x_velocity"]/50
+            r += info["x_velocity"]/25
+            xvel += info["x_velocity"]/25
+            # r += ((info["x_velocity"] ** 2 + info["y_velocity"] ** 2) ** (1/2))/50
             env.render()
 
         total_reward += r
@@ -312,7 +326,7 @@ for _ in range(epochs):
     x,y,z,w = observation[1:5]
     dir = math.atan2(2.0 * (w * x + y * z), 1 - 2 * (x**2 + z**2))/(2*math.pi)
     # direction_task.fill_(dir)
-    dir=0
+    # dir=0
     direction.fill_(dir)
     # direction_list.append(dir - direction_prev[0])
     direction_list.append(dir)
@@ -324,7 +338,6 @@ for _ in range(epochs):
     #direction = torch.tensor([direction], dtype=torch.float32, device=device)
     #task_reward_list.append(total_reward)
         
-    task_reward_list.append(total_reward)
     print("\tReward {} {}".format(total_reward, xvel))
 
     target_value_tensor.fill_(total_reward-target_value_tensor_previous)
@@ -335,12 +348,19 @@ for _ in range(epochs):
     combined_control_seq = torch.cat([combined_control_seq, new_control_seq.unsqueeze(0)], dim=0)
     combined_direction = torch.cat([combined_direction, direction.unsqueeze(0)], dim=0)
     combined_target_value_tensor = torch.cat([combined_target_value_tensor, target_value_tensor.unsqueeze(0)], dim=0)
+    if epoch < 5:
+        _combined_target_value_tensor = smooth_tensor(combined_target_value_tensor, 2).to(device)
+    else:
+        _combined_target_value_tensor = smooth_tensor(combined_target_value_tensor, 2).to(device)
 
+    task_reward_list.append(_combined_target_value_tensor[-1].item())
+
+    # print(combined_target_value_tensor)
     # print(combined_control_seq.shape)
     # print(combined_direction.shape)
     # print(combined_target_value_tensor.shape)
 
-    loss = autoencoder.train_model(combined_control_seq[1:], combined_target_value_tensor[1:], combined_direction[1:], combined_latent_space[1:])
+    loss = autoencoder.train_model(combined_control_seq[1:], _combined_target_value_tensor[1:], combined_direction[1:], combined_latent_space[1:])
     # loss = autoencoder.train_model(new_control_seq, target_value_tensor, direction)
 
     # ep = _

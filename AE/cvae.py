@@ -113,9 +113,9 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
         self.learning_rate = 1e-3
         self.optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
         self.optimizer_autoencoder = optim.Adam(self.autoencoder.parameters(), lr=self.learning_rate)
-        self.optimizer_task_network = optim.Adam(self.task_network.parameters(), lr=1e-3)
+        self.optimizer_task_network = optim.Adam(self.task_network.parameters(), lr=1e-2)
 
-        self.reconstruction_weight = 1
+        self.reconstruction_weight = 0.1
         self.task_weight = 1
 
         self.direction = torch.tensor([0.0], dtype=torch.float32, device="cuda:0")
@@ -333,10 +333,11 @@ class TaskNetwork(nn.Module):
         self.optimizer.step()
         return loss.item(), task_pred
 
-    def evaluate(self, latent_space, condition):
+    def evaluate(self, latent_space, condition, target_value=torch.tensor([0], device="cuda:0")):
         self.eval()            
         task_pred = self.forward(latent_space, condition)
         task_loss = self.criterion(torch.tensor([0], device="cuda:0"),task_pred)
+        # task_loss = self.criterion(task_pred, target_value)
 
         task_loss = -1*task_pred.item()
         # print(task_loss)
