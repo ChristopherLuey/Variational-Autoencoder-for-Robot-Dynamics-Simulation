@@ -129,8 +129,8 @@ def acquire_new_data(last_control_seq, autoencoder, target_value_tensor, directi
     target_value_tensor = target_value_tensor.clone().detach()
 
 
-    if (target_value_tensor.item() < 0):
-        target_value_tensor.fill_(-target_value_tensor.item())
+    # if (target_value_tensor.item() < 0):
+    #     target_value_tensor.fill_(-target_value_tensor.item())
 
     for _ in range(samples):
         # Perturb the control sequence by a random vector
@@ -197,32 +197,37 @@ def acquire_new_data_sgd(last_control_seq, autoencoder, target_value_tensor, dir
     - The new control sequence with the lowest autoencoder objective function value after applying SGD.
     """
     # Ensure last_control_seq requires gradient for optimization
+    # Ensure last_control_seq requires gradient for optimization
     control_seq = last_control_seq.clone().detach().requires_grad_(True)
-    #control_seq.grad.zero_()
+    optimizer = torch.optim.SGD([control_seq], lr=learning_rate)  # Set up the optimizer
+
     lowest_loss = float('inf')
-    best_seq = control_seq.clone().detach()
+    best_seq = None
+    prediction = None
 
     for _ in range(samples):
-        # Evaluate the control sequence
-        _, loss, reconstruction_loss, task_loss = autoencoder.evaluate_gradient(control_seq, target_value_tensor, direction)
+        optimizer.zero_grad()  # Reset gradients to zero
 
+        # Evaluate the control sequence
+        prediction, loss, reconstruction_loss, task_loss = autoencoder.evaluate_gradient(control_seq, target_value_tensor, direction)
+
+        # Check and update the best sequence
         if loss.item() < lowest_loss:
             lowest_loss = loss.item()
-            best_seq = control_seq.clone().detach()
+            best_seq = control_seq.detach().clone()  # Detach and clone to store without gradients
 
         # Compute gradients
         loss.backward()
 
-        # Update the control sequence with gradient descent
+        # Update the control sequence using SGD
+        optimizer.step()
+
+        # Optionally apply constraints such as clamping
         with torch.no_grad():
-            control_seq -= learning_rate * control_seq.grad
-            # Optionally: Apply constraints such as clamping
             control_seq.clamp_(min=-1, max=1)
 
-    # # Detach the optimized sequence from the computational graph
-    # optimized_seq = control_seq.detach()
     print("Lowest Loss:", lowest_loss)
-    return best_seq, lowest_loss
+    return prediction, best_seq, lowest_loss
 
 def smooth_tensor(tensor, box_pts):
     box = torch.ones(box_pts) / box_pts
@@ -273,6 +278,7 @@ torch.autograd.set_detect_anomaly(True)
 
 clear = np.array([0,0,0,0,0,0,0,0])
 epochs = config['epochs']
+epoch_counter = 0
 xvel = 0
 data_con = np.zeros((epochs,control_sequence_length))
 for epoch in range(epochs):
@@ -301,7 +307,6 @@ for epoch in range(epochs):
     # print("\tDecoded:", prediction1[0])
     # print("\tInput:", new_control_seq)
     print("\tExpected Reward:", prediction1[1][-1])
-    expected_reward_list.append(prediction1[1][-1].item())
 
     total_reward = 0
     _new_control_seq = new_control_seq.view(control_sequence_time, joints)
@@ -322,17 +327,30 @@ for epoch in range(epochs):
             env.render()
 
         total_reward += r
+    print("\tReward {} {}".format(total_reward, xvel))
 
+    # if not (0.1 < total_reward):
+    #     observation = env.reset()
+    #     print("\tTry Again")
+    #     continue
+    _total_reward = total_reward
+    if total_reward<0:
+        total_reward = 0
+    else:
+        total_reward = 1
+
+    expected_reward_list.append(prediction1[1][-1].item())
+    epoch_counter += 1
     x,y,z,w = observation[1:5]
     dir = math.atan2(2.0 * (w * x + y * z), 1 - 2 * (x**2 + z**2))/(2*math.pi)
     # direction_task.fill_(dir)
-    # dir=0
-    # direction.fill_(dir)
-    direction.fill_(total_reward)
+    dir=0
+    direction.fill_(dir)
+    # direction.fill_(total_reward)
 
     # direction_list.append(dir - direction_prev[0])
     # direction_list.append(dir)
-    direction_list.append(total_reward)
+    direction_list.append(_total_reward)
 
 
     direction_prev.fill_(dir)
@@ -341,10 +359,9 @@ for epoch in range(epochs):
     #direction = torch.tensor([direction], dtype=torch.float32, device=device)
     #task_reward_list.append(total_reward)
         
-    print("\tReward {} {}".format(total_reward, xvel))
 
-    target_value_tensor.fill_(total_reward-target_value_tensor_previous)
-    # target_value_tensor.fill_(total_reward)
+    # target_value_tensor.fill_(total_reward-target_value_tensor_previous)
+    target_value_tensor.fill_(total_reward)
 
     target_value_tensor_previous = total_reward
 
@@ -362,9 +379,9 @@ for epoch in range(epochs):
         _combined_target_value_tensor = combined_target_value_tensor.clone()
 
     if epoch < 5:
-        _combined_target_value_tensor = smooth_tensor(_combined_target_value_tensor, 3).to(device)
+        _combined_target_value_tensor = smooth_tensor(_combined_target_value_tensor, 1).to(device)
     else:
-        _combined_target_value_tensor = smooth_tensor(_combined_target_value_tensor, 5).to(device)
+        _combined_target_value_tensor = smooth_tensor(_combined_target_value_tensor, 1).to(device)
 
     task_reward_list.append(_combined_target_value_tensor[-1].item())
 
@@ -406,7 +423,7 @@ for epoch in range(epochs):
     # for i in range(5):
     #     observation, reward, done, info = env.step(clear)
     #     env.render()
-    # observation = env.reset()
+    observation = env.reset()
   
 
     # Check if the episode is done
@@ -419,14 +436,14 @@ env.close()
 fig, axes = plt.subplots(1, 4, figsize=(12, 6))
 
 # Plot training loss on the first subplot
-axes[0].plot(range(1, epochs + 1), losses, label="Training Loss")
+axes[0].plot(range(1, epoch_counter + 1), losses, label="Training Loss")
 axes[0].set_xlabel('Epoch')
 axes[0].set_ylabel('Loss')
 axes[0].set_title('Model Loss Over Time')
 axes[0].legend()
 
 # Plot objective loss on the second subplot
-axes[1].plot(range(1, epochs + 1), obj_loss, label="Objective Loss")
+axes[1].plot(range(1, epoch_counter + 1), obj_loss, label="Objective Loss")
 axes[1].set_xlabel('Epoch')
 axes[1].set_ylabel('Loss')
 axes[1].set_title('Objective Loss Over Time')
@@ -435,7 +452,7 @@ axes[1].legend()
 # Plot new control sequence values on the third subplot
 new_control_seq_values_transposed = list(zip(*new_control_seq_values))
 for seq_index, seq_values in enumerate(new_control_seq_values_transposed):
-    axes[2].plot(range(1, epochs + 1), seq_values, label=f"Seq {seq_index + 1}")
+    axes[2].plot(range(1, epoch_counter + 1), seq_values, label=f"Seq {seq_index + 1}")
 axes[2].set_xlabel('Epoch')
 axes[2].set_ylabel('Value')
 axes[2].set_title('New Control Seq Values Over Time')
@@ -443,7 +460,7 @@ axes[2].set_title('New Control Seq Values Over Time')
 
 new_control_seq_values_transposed = list(zip(*decoded_list))
 for seq_index, seq_values in enumerate(new_control_seq_values_transposed):
-    axes[3].plot(range(1, epochs + 1), seq_values, label=f"Seq {seq_index + 1}")
+    axes[3].plot(range(1, epoch_counter + 1), seq_values, label=f"Seq {seq_index + 1}")
 axes[3].set_xlabel('Epoch')
 axes[3].set_ylabel('Value')
 axes[3].set_title('New Control Seq Values Over Time')
@@ -451,9 +468,9 @@ axes[3].set_title('New Control Seq Values Over Time')
 plt.tight_layout()
 plt.show()
 
-plt.plot(range(1, epochs + 1), task_reward_list, label='Task Reward')
-plt.plot(range(1, epochs + 1), expected_reward_list, label='Expected Reward')
-plt.plot(range(1, epochs + 1), [(e - t)**2 for e, t in zip(expected_reward_list, task_reward_list)], label='Reward Difference')
+plt.plot(range(1, epoch_counter + 1), task_reward_list, label='Task Reward')
+plt.plot(range(1, epoch_counter + 1), expected_reward_list, label='Expected Reward')
+plt.plot(range(1, epoch_counter + 1), [(e - t)**2 for e, t in zip(expected_reward_list, task_reward_list)], label='Reward Difference')
 
 plt.xlabel('Epoch')
 plt.ylabel('Reward')
@@ -500,11 +517,11 @@ plt.legend()
 plt.show()
 
 for seq_index, seq_values in enumerate(encoded_list_transposed):
-    plt.plot(range(1, epochs + 1), seq_values, label=f"Seq {seq_index + 1}")
+    plt.plot(range(1, epoch_counter + 1), seq_values, label=f"Seq {seq_index + 1}")
 plt.show()
 
 # Plot objective loss on the second subplot
-plt.plot(range(1, epochs + 1), direction_list, label="Direction")
+plt.plot(range(1, epoch_counter + 1), direction_list, label="Direction")
 plt.show()
 
 # # Convert log_variances to numpy arrays and calculate standard deviations
