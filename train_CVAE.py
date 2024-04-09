@@ -3,6 +3,7 @@ import numpy as np
 import argparse
 import yaml
 import torch
+import torch.nn.functional
 import matplotlib
 import tkinter
 matplotlib.use('TkAgg')  # Or 'Qt5Agg', 'GTK3Agg', 'macosx', 'TkAgg'
@@ -71,7 +72,7 @@ register(
     max_episode_steps=100000,  # Set to desired value
 )
 
-env = gym.make('CustomAnt-v3', terminate_when_unhealthy=True, healthy_z_range=(0.3,5), ctrl_cost_weight=0, contact_cost_weight=0, healthy_reward=0)
+env = gym.make('Ant-v3', terminate_when_unhealthy=True, healthy_z_range=(0.3,5), ctrl_cost_weight=0, contact_cost_weight=0, healthy_reward=0)
 observation = env.reset()
 joints = config["joints"]
 
@@ -129,13 +130,25 @@ def acquire_new_data(last_control_seq, autoencoder, target_value_tensor, directi
     target_value_tensor = target_value_tensor.clone().detach()
 
 
-    if (target_value_tensor.item() < 0):
-        target_value_tensor.fill_(-target_value_tensor.item())
+    # if (target_value_tensor.item() < 0):
+    #     target_value_tensor.fill_(-target_value_tensor.item())
 
     for _ in range(samples):
         # Perturb the control sequence by a random vector
         perturbation = (torch.rand_like(last_control_seq)-0.5) * perturbation_strength
-        perturbed_seq = torch.clamp(last_control_seq + perturbation, min=-1, max=1).to(device)
+        #perturbed_seq = torch.clamp(last_control_seq + perturbation, min=-1, max=1).to(device)
+        perturbed_seq = last_control_seq + perturbation
+
+        # Normalize tensor to have values between 0 and 1
+        min_val = perturbed_seq.min()
+        max_val = perturbed_seq.max()
+        perturbed_seq = (perturbed_seq - min_val) / (max_val - min_val)
+
+        # Scale to -1 to 1
+        perturbed_seq = 2 * perturbed_seq - 1
+
+        # Move the tensor to the specified device
+        perturbed_seq = perturbed_seq.to(device)
 
         # Evaluate the perturbed sequence without updating the autoencoder weights
         _prediction, loss, reconstruction_loss, task_loss = autoencoder.evaluate(perturbed_seq, target_value_tensor, direction)
@@ -274,6 +287,9 @@ torch.autograd.set_detect_anomaly(True)
 clear = np.array([0,0,0,0,0,0,0,0])
 epochs = config['epochs']
 xvel = 0
+previous_reward = 0
+total_reward = 0
+
 data_con = np.zeros((epochs,control_sequence_length))
 for epoch in range(epochs):
 
@@ -303,7 +319,6 @@ for epoch in range(epochs):
     print("\tExpected Reward:", prediction1[1][-1])
     expected_reward_list.append(prediction1[1][-1].item())
 
-    total_reward = 0
     _new_control_seq = new_control_seq.view(control_sequence_time, joints)
 
     xvel = 0
@@ -316,26 +331,31 @@ for epoch in range(epochs):
             observation, reward, done, info = env.step(action)
             # if args["no_render"] != True:
             # r += (info["x_velocity"] * 2- np.abs(info["y_velocity"]))
-            r += info["x_velocity"]/25
-            xvel += info["x_velocity"]/25
+            r += info["x_velocity"]
+            # r+=info["x_position"]
+            xvel += info["x_velocity"]
             # r += ((info["x_velocity"] ** 2 + info["y_velocity"] ** 2) ** (1/2))/50
-            env.render()
+            # env.render()
 
-        total_reward += r
+        # total_reward += r
+    if info["x_position"] < 0:
+        env.reset()
+        continue
+    total_reward = info["x_position"]-total_reward
 
     x,y,z,w = observation[1:5]
     dir = math.atan2(2.0 * (w * x + y * z), 1 - 2 * (x**2 + z**2))/(2*math.pi)
     # direction_task.fill_(dir)
-    # dir=0
-    # direction.fill_(dir)
-    direction.fill_(total_reward)
+    dir=0
+    direction.fill_(dir)
+    # direction.fill_(total_reward - direction_prev[0])
 
     # direction_list.append(dir - direction_prev[0])
     # direction_list.append(dir)
-    direction_list.append(total_reward)
+    # direction_list.append(total_reward)
 
 
-    direction_prev.fill_(dir)
+    direction_prev.fill_(total_reward)
     # direction.fill_(dir)
 
     #direction = torch.tensor([direction], dtype=torch.float32, device=device)
@@ -352,7 +372,8 @@ for epoch in range(epochs):
     combined_direction = torch.cat([combined_direction, direction.unsqueeze(0)], dim=0)
     combined_target_value_tensor = torch.cat([combined_target_value_tensor, target_value_tensor.unsqueeze(0)], dim=0)
 
-    if combined_control_seq.shape[0] > 100:
+    # if combined_control_seq.shape[0] > 100:
+    if False:
         _combined_control_seq = combined_control_seq[-100:]
         _combined_direction = combined_direction[-100:]
         _combined_target_value_tensor = combined_target_value_tensor[-100:]
@@ -406,7 +427,7 @@ for epoch in range(epochs):
     # for i in range(5):
     #     observation, reward, done, info = env.step(clear)
     #     env.render()
-    # observation = env.reset()
+    observation = env.reset()
   
 
     # Check if the episode is done
