@@ -152,6 +152,8 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
             if hasattr(layer, 'reset_parameters'):
                 layer.reset_parameters()
 
+        print(self.task_network.parameters())
+
 
         self.train()
         self.autoencoder.encoder.train()
@@ -165,11 +167,18 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
 
         # Calculate the reconstruction loss
         reconstruction_loss = self.autoencoder.loss_function(input_batch, decoded, mean, log_variation)
-        if _latent_representation.shape[0] == 0:
-            _latent_representation = latent_representation
-        else:
-            _latent_representation = torch.cat([_latent_representation, latent_representation[-1]])
+        # if _latent_representation.shape[0] == 0:
+        #     _latent_representation = latent_representation
+        # else:
+        #     _latent_representation = torch.cat([_latent_representation, latent_representation[-1]])
         # Calculate the task-specific loss
+        # task_pred = self.task_network.forward(_latent_representation, condition)
+
+        if _latent_representation.shape[0] == 0:
+            _latent_representation = mean
+        else:
+            _latent_representation = torch.cat([_latent_representation, mean[-1]])
+
         task_pred = self.task_network.forward(_latent_representation, condition)
         task_loss = self.task_network.criterion(task_pred, target_value)
 

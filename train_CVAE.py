@@ -71,7 +71,7 @@ register(
     max_episode_steps=100000,  # Set to desired value
 )
 
-env = gym.make('Ant-v3', terminate_when_unhealthy=True, healthy_z_range=(0.3,5), ctrl_cost_weight=0, contact_cost_weight=0, healthy_reward=0)
+env = gym.make('CustomAnt-v3', terminate_when_unhealthy=True, healthy_z_range=(0.3,5), ctrl_cost_weight=0, contact_cost_weight=0, healthy_reward=0)
 observation = env.reset()
 joints = config["joints"]
 
@@ -327,9 +327,12 @@ for epoch in range(epochs):
     dir = math.atan2(2.0 * (w * x + y * z), 1 - 2 * (x**2 + z**2))/(2*math.pi)
     # direction_task.fill_(dir)
     # dir=0
-    direction.fill_(dir)
+    # direction.fill_(dir)
+    direction.fill_(total_reward)
+
     # direction_list.append(dir - direction_prev[0])
-    direction_list.append(dir)
+    # direction_list.append(dir)
+    direction_list.append(total_reward)
 
 
     direction_prev.fill_(dir)
@@ -348,10 +351,20 @@ for epoch in range(epochs):
     combined_control_seq = torch.cat([combined_control_seq, new_control_seq.unsqueeze(0)], dim=0)
     combined_direction = torch.cat([combined_direction, direction.unsqueeze(0)], dim=0)
     combined_target_value_tensor = torch.cat([combined_target_value_tensor, target_value_tensor.unsqueeze(0)], dim=0)
-    if epoch < 5:
-        _combined_target_value_tensor = smooth_tensor(combined_target_value_tensor, 2).to(device)
+
+    if combined_control_seq.shape[0] > 100:
+        _combined_control_seq = combined_control_seq[-100:]
+        _combined_direction = combined_direction[-100:]
+        _combined_target_value_tensor = combined_target_value_tensor[-100:]
     else:
-        _combined_target_value_tensor = smooth_tensor(combined_target_value_tensor, 2).to(device)
+        _combined_control_seq = combined_control_seq.clone()
+        _combined_direction = combined_direction.clone()
+        _combined_target_value_tensor = combined_target_value_tensor.clone()
+
+    if epoch < 5:
+        _combined_target_value_tensor = smooth_tensor(_combined_target_value_tensor, 3).to(device)
+    else:
+        _combined_target_value_tensor = smooth_tensor(_combined_target_value_tensor, 5).to(device)
 
     task_reward_list.append(_combined_target_value_tensor[-1].item())
 
@@ -360,7 +373,7 @@ for epoch in range(epochs):
     # print(combined_direction.shape)
     # print(combined_target_value_tensor.shape)
 
-    loss = autoencoder.train_model(combined_control_seq[1:], _combined_target_value_tensor[1:], combined_direction[1:], combined_latent_space[1:])
+    loss = autoencoder.train_model(_combined_control_seq[1:], _combined_target_value_tensor[1:], _combined_direction[1:], combined_latent_space[1:])
     # loss = autoencoder.train_model(new_control_seq, target_value_tensor, direction)
 
     # ep = _
@@ -384,11 +397,11 @@ for epoch in range(epochs):
 
     losses.append(loss[0])
     obj_loss.append(loss[1])
-    encoded_list.append(loss[3].to("cpu").tolist())
+    encoded_list.append(loss[3][-1].to("cpu").tolist())
     # encoded_list.append(loss[5].to("cpu").tolist())
     decoded_list.append(loss[4].to("cpu").tolist())
     new_control_seq_values.append(new_control_seq.to("cpu").tolist()) 
-    variation_list.append(loss[6])
+    variation_list.append(loss[6][-1])
 
     # for i in range(5):
     #     observation, reward, done, info = env.step(clear)
@@ -456,35 +469,35 @@ std_dev_list = [torch.exp(0.5 * lv).cpu().detach().numpy() for lv in variation_l
 # Transposing lists to work with sequences across dimensions
 
 encoded_list_transposed = list(zip(*encoded_list))
-# std_dev_list_transposed = list(zip(std_dev_list[-1]))
-#
-# print(std_dev_list_transposed)
-#
-# # Create a new figure for the plot
-# plt.figure(figsize=(10, 6))
-#
-# # Plot each sequence in the encoded list and add variance shading
-# for dim_index, (dim_values, dim_std_devs) in enumerate(zip(encoded_list_transposed, std_dev_list_transposed)):
-#     _epoch = np.arange(1, len(dim_values) + 1)
-#     dim_values = np.array(dim_values)
-#     dim_std_devs = np.array(dim_std_devs)
-#
-#     # Plot the dimension values
-#     plt.plot(_epoch, dim_values, label=f"Dimension {dim_index + 1}")
-#
-#     # Calculate upper and lower bounds for the shaded area using standard deviation
-#     upper_bounds = dim_values + dim_std_devs
-#     lower_bounds = dim_values - dim_std_devs
-#
-#     # Add shaded area to represent variance
-#     plt.fill_between(_epoch, lower_bounds, upper_bounds, alpha=0.2)
-#
-#
-# plt.xlabel('Epoch')
-# plt.ylabel('Encoded Value')
-# plt.title('Encoded Sequence Values Over Time')
-# plt.legend()
-# plt.show()
+std_dev_list_transposed = list(zip(std_dev_list[-1]))
+
+print(std_dev_list_transposed)
+
+# Create a new figure for the plot
+plt.figure(figsize=(10, 6))
+
+# Plot each sequence in the encoded list and add variance shading
+for dim_index, (dim_values, dim_std_devs) in enumerate(zip(encoded_list_transposed, std_dev_list_transposed)):
+    _epoch = np.arange(1, len(dim_values) + 1)
+    dim_values = np.array(dim_values)
+    dim_std_devs = np.array(dim_std_devs)
+
+    # Plot the dimension values
+    plt.plot(_epoch, dim_values, label=f"Dimension {dim_index + 1}")
+
+    # Calculate upper and lower bounds for the shaded area using standard deviation
+    upper_bounds = dim_values + dim_std_devs
+    lower_bounds = dim_values - dim_std_devs
+
+    # Add shaded area to represent variance
+    plt.fill_between(_epoch, lower_bounds, upper_bounds, alpha=0.2)
+
+
+plt.xlabel('Epoch')
+plt.ylabel('Encoded Value')
+plt.title('Encoded Sequence Values Over Time')
+plt.legend()
+plt.show()
 
 for seq_index, seq_values in enumerate(encoded_list_transposed):
     plt.plot(range(1, epochs + 1), seq_values, label=f"Seq {seq_index + 1}")
