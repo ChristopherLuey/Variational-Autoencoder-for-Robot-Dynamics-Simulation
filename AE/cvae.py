@@ -317,7 +317,7 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
     
 
 class TaskNetwork(nn.Module):
-    def __init__(self, latent_size, task_layer_sizes, activation=nn.Sigmoid):
+    def __init__(self, latent_size, task_layer_sizes, activation=nn.ReLU):
         super(TaskNetwork, self).__init__()
         self.model = nn.Sequential()
         # self.fc = nn.Linear(latent_size, 1)
