@@ -1,62 +1,18 @@
 import gym
-import numpy as np
-import argparse
-import yaml
-import torch
 import matplotlib
-import tkinter
 matplotlib.use('TkAgg')  # Or 'Qt5Agg', 'GTK3Agg', 'macosx', 'TkAgg'
 import matplotlib.pyplot as plt
 import math
+
+from AE.util import *
 
 # export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/.mujoco/mujoco200/bin
 
 import os
 os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
-
-def arg_parse():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--env',   type=str,   default='AntEnv_v3', help="Only AntEnv_v3")
-    parser.add_argument('--method', type=str, default='AE', help='maxdiff, mppi, or sac_orig')
-    parser.add_argument('--seed', type=int, default=666, help='any positive integer')
-    parser.add_argument('--log', dest='log', action='store_true',help='save data for experiment')
-    parser.add_argument('--no_log', dest='log', action='store_false',help='run test without saving')
-    parser.set_defaults(log=True)
-    parser.add_argument('--render', dest='render', action='store_true',help='show visualization while running')
-    parser.add_argument('--no_render', dest='render', action='store_false',help='run offline / without showing plots')
-    parser.set_defaults(render=False)
-    parser.add_argument('--cpu', dest='cpu', action='store_true',help='only use CPU')
-    parser.add_argument('--no_cpu', dest='cpu', action='store_false',help='try to use GPU if available')
-    parser.set_defaults(cpu=False)
-    parser.add_argument('--mod_weight', type=str, default='None',help="[gym envs only] load alternate xml file for enviroment (e.g. 'light' or 'orig' for swimmer)")
-    parser.add_argument('--frames_before_learning', type=int, default=0,help="if specified, number of frames to collect before starting to learn (otherwise, batch size is used)")
-    parser.add_argument('--random_actions', type=int, default=0,help="if specified, number random frames to collect before starting to use the policy")
-    parser.add_argument('--base_dir',   type=str,   default='./results/',help="where to save the data (if log=True)")
-    parser.add_argument('--singleshot', dest='singleshot', action='store_true',help="don't reset for each epoch and run all steps from initial condition")
-    parser.set_defaults(singleshot=False)
-    args = parser.parse_args()
-    return args
 args = arg_parse()
-
-def configuration():
-    # load config
-    config_path = f'./config/AE.yaml'
-
-    with open(config_path, 'r') as f:
-        config_dict = yaml.safe_load(f)
-        config = config_dict[args.env]
-
-    return config
-config = configuration()
-
-device ='cpu'
-if not args.cpu:
-    if torch.cuda.is_available():
-        torch.set_num_threads(1)
-        device  = 'cuda:0'
-        print('Using GPU Accel')
-    else:
-        args.cpu = True
+config = configuration(args)
+device = check_gpu(args)
 
 from gym.envs.registration import register, registry
 
@@ -110,6 +66,7 @@ combined_control_seq = new_control_seq.clone().unsqueeze(0)
 
 new_control_seq.requires_grad_(True)
 render_frame = 1
+
 direction = torch.tensor([0.0], dtype=torch.float32, device=device)
 combined_direction = direction.clone().unsqueeze(0)
 direction_task = torch.tensor([0.0], dtype=torch.float32, device=device)
@@ -117,12 +74,6 @@ direction_prev = torch.tensor([0.0], dtype=torch.float32, device=device)
 
 
 def acquire_new_data(last_control_seq, autoencoder, target_value_tensor, direction):
-    """
-    Acquire new data for training the autoencoder.
-
-    Returns:
-    - The new control sequence with the lowest autoencoder objective function value after sampling.
-    """
     lowest_loss = float('inf')
     best_seq = None
     prediction = None
@@ -182,21 +133,6 @@ def acquire_new_data(last_control_seq, autoencoder, target_value_tensor, directi
 #     return x
 
 def acquire_new_data_sgd(last_control_seq, autoencoder, target_value_tensor, direction, learning_rate=1e-3):
-    """
-    Acquire new data for training the autoencoder using Stochastic Gradient Descent (SGD).
-
-    Parameters:
-    - last_control_seq: The last control sequence.
-    - autoencoder: The autoencoder model.
-    - target_value_tensor: The target value for the autoencoder to achieve.
-    - direction: The direction for evaluating the autoencoder.
-    - learning_rate: The learning rate for SGD.
-    - num_iterations: The number of iterations to perform SGD.
-
-    Returns:
-    - The new control sequence with the lowest autoencoder objective function value after applying SGD.
-    """
-    # Ensure last_control_seq requires gradient for optimization
     # Ensure last_control_seq requires gradient for optimization
     control_seq = last_control_seq.clone().detach().requires_grad_(True)
     optimizer = torch.optim.SGD([control_seq], lr=learning_rate)  # Set up the optimizer
