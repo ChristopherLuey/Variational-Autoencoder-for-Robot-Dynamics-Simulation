@@ -1,6 +1,7 @@
 import gym
 from gym.envs.mujoco.ant_v3 import AntEnv
 
+
 class CustomAntEnv(AntEnv):
     def __init__(self,
                  forward_reward_weight=1.0,
@@ -37,10 +38,14 @@ class CustomAntEnv(AntEnv):
     def is_healthy(self):
         # You might want to adjust the health criteria based on custom parameters
 
-        return super().is_healthy
+        return super().is_healthy()
         # min_z, max_z = self._healthy_z_range
         # z = self.get_body_com("torso")[2]
         # return min_z <= z <= max_z
 
     def reset(self, **kwargs):
         return super().reset(**kwargs)
+
+    @property
+    def terminated(self):
+        return super().terminated
