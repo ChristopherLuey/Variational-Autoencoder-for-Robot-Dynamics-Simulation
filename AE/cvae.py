@@ -179,8 +179,8 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
         else:
             _latent_representation = torch.cat([_latent_representation, mean[-1]])
 
-        # task_pred = self.task_network.forward(_latent_representation, condition)
-        task_pred = self.task_network.forward(mean, condition)
+        task_pred = self.task_network.forward(_latent_representation, condition)
+        # task_pred = self.task_network.forward(mean, condition)
 
         task_loss = self.task_network.criterion(task_pred, target_value)
 
