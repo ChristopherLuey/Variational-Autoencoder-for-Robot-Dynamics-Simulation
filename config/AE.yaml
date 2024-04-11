@@ -9,4 +9,4 @@ AntEnv_v3:
     condition_size: 1
     samples: 100
     perturbation_strength: 0.2
-    epochs: 100
+    epochs: 500

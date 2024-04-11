@@ -71,7 +71,7 @@ register(
     max_episode_steps=100000,  # Set to desired value
 )
 
-env = gym.make('CustomAnt-v3', terminate_when_unhealthy=True, healthy_z_range=(0.3,5), ctrl_cost_weight=0, contact_cost_weight=0, healthy_reward=0)
+env = gym.make('Ant-v3', terminate_when_unhealthy=True, healthy_z_range=(0.3,5), ctrl_cost_weight=0, contact_cost_weight=0, healthy_reward=0)
 observation = env.reset()
 joints = config["joints"]
 
@@ -423,7 +423,7 @@ for epoch in range(epochs):
     # for i in range(5):
     #     observation, reward, done, info = env.step(clear)
     #     env.render()
-    observation = env.reset()
+    # observation = env.reset()
   
 
     # Check if the episode is done
