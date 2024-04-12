@@ -165,15 +165,6 @@ def acquire_new_data_sgd(last_control_seq, autoencoder, target_value_tensor, dir
     print("Lowest Loss:", lowest_loss)
     return prediction, best_seq, lowest_loss
 
-def smooth_tensor(tensor, box_pts):
-    box = torch.ones(box_pts) / box_pts
-    # Ensure tensor is on CPU for numpy compatibility if needed and convert to numpy for convolution
-    tensor_np = tensor.cpu().squeeze().numpy()
-    smoothed_np = np.convolve(tensor_np, box, mode='same')
-    # Convert back to tensor
-    smoothed_tensor = torch.tensor(smoothed_np, dtype=torch.float32).unsqueeze(1)
-    return smoothed_tensor
-
 # def acquire_new_data_sgd(last_control_seq, lr=0.01, max_iterations=10, threshold=0.01):
 #     """
 #     Acquire new data for training the autoencoder using stochastic gradient descent.
@@ -304,8 +295,8 @@ for epoch in range(epochs):
     combined_control_seq = torch.cat([combined_control_seq, new_control_seq.unsqueeze(0)], dim=0)
     combined_direction = torch.cat([combined_direction, direction.unsqueeze(0)], dim=0)
     combined_target_value_tensor = torch.cat([combined_target_value_tensor, target_value_tensor.unsqueeze(0)], dim=0)
-
-    if combined_control_seq.shape[0] > 100:
+    if False:
+        # if combined_control_seq.shape[0] > 100:
         _combined_control_seq = combined_control_seq[-100:]
         _combined_direction = combined_direction[-100:]
         _combined_target_value_tensor = combined_target_value_tensor[-100:]
