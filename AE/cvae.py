@@ -115,8 +115,8 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
         self.optimizer_autoencoder = optim.Adam(self.autoencoder.parameters(), lr=self.learning_rate)
         self.optimizer_task_network = optim.Adam(self.task_network.parameters(), lr=1e-2)
 
-        self.reconstruction_weight = [1, 0.1]
-        self.task_weight = [1,1]
+        self.reconstruction_weight = [1, 0.05]
+        self.task_weight = [1,2]
 
         self.direction = torch.tensor([0.0], dtype=torch.float32, device="cuda:0")
 
