@@ -261,10 +261,11 @@ for epoch in range(epochs):
     #     print("\tTry Again")
     #     continue
     _total_reward = total_reward
-    if total_reward<0:
-        total_reward = 0
-    else:
-        total_reward = 1
+
+    # if total_reward<0:
+    #     total_reward = 0
+    # else:
+    #     total_reward = 1
 
     expected_reward_list.append(prediction1[1][-1].item())
     epoch_counter += 1

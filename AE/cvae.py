@@ -110,7 +110,7 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
 
         self.criterion = nn.MSELoss()  # Use Mean Squared Error Loss for non-binary data
         self.last_loss = None
-        self.learning_rate = 1e-3
+        self.learning_rate = 1e-5
         self.optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
         self.optimizer_autoencoder = optim.Adam(self.autoencoder.parameters(), lr=self.learning_rate)
         self.optimizer_task_network = optim.Adam(self.task_network.parameters(), lr=1e-2)
