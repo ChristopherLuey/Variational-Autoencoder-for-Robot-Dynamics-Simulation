@@ -221,7 +221,7 @@ for epoch in range(epochs):
     # _, loss = autoencoder.evaluate_gradient(new_control_seq.unsqueeze(0), target_value_tensor,direction)
     # print("prior control seq",new_control_seq,loss)
     
-    prediction1, new_control_seq, l = acquire_new_data(new_control_seq, autoencoder, target_value_tensor, direction)
+    prediction1, new_control_seq, l = acquire_new_data_sgd(new_control_seq, autoencoder, target_value_tensor, direction)
     # __, loss, reconstruction_loss, task_loss = autoencoder.evaluate_gradient(new_control_seq, target_value_tensor, direction)
     prediction2, loss2, reconstruction_loss, task_loss = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
     __, loss3, __, __ = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
