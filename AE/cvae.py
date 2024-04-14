@@ -207,6 +207,7 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
             _latent_representation = torch.cat([_latent_representation, latent_representation[-1]])
 
         task_loss, task_pred = self.task_network.train_model(_latent_representation.clone().detach(), target_value, condition)
+        task_loss = 0
         # task_loss, task_pred = self.task_network.train_model(mean.clone().detach(), target_value, condition.clone().detach())
 
         self.training_epochs+=1
