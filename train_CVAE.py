@@ -148,9 +148,9 @@ def acquire_new_data_sgd(last_control_seq, autoencoder, target_value_tensor, dir
         prediction, loss, reconstruction_loss, task_loss = autoencoder.evaluate_gradient(control_seq, target_value_tensor, direction)
 
         # Check and update the best sequence
-        if loss.item() < lowest_loss:
-            lowest_loss = loss.item()
-            best_seq = control_seq.detach().clone()  # Detach and clone to store without gradients
+        # if loss.item() < lowest_loss:
+        #     lowest_loss = loss.item()
+        #     best_seq = control_seq.detach().clone()  # Detach and clone to store without gradients
 
         # Compute gradients
         loss.backward()
@@ -158,12 +158,11 @@ def acquire_new_data_sgd(last_control_seq, autoencoder, target_value_tensor, dir
         # Update the control sequence using SGD
         optimizer.step()
 
-        # Optionally apply constraints such as clamping
-        with torch.no_grad():
-            control_seq.clamp_(min=-1, max=1)
+        control_seq.clamp_(min=-1, max=1)
 
     # print("Lowest Loss:", lowest_loss)
-    return prediction, best_seq, lowest_loss
+    # return prediction, best_seq, lowest_loss
+    return prediction, control_seq.detach(), loss.item()
 
 # def acquire_new_data_sgd(last_control_seq, lr=0.01, max_iterations=10, threshold=0.01):
 #     """
