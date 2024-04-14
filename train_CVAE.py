@@ -96,7 +96,7 @@ def acquire_new_data(last_control_seq, autoencoder, target_value_tensor, directi
             best_seq = perturbed_seq
             prediction = _prediction
     
-    print("Lowest Loss:", lowest_loss)
+    # print("Lowest Loss:", lowest_loss)
 
     return prediction, best_seq.detach(), lowest_loss
 
@@ -162,7 +162,7 @@ def acquire_new_data_sgd(last_control_seq, autoencoder, target_value_tensor, dir
         with torch.no_grad():
             control_seq.clamp_(min=-1, max=1)
 
-    print("Lowest Loss:", lowest_loss)
+    # print("Lowest Loss:", lowest_loss)
     return prediction, best_seq, lowest_loss
 
 # def acquire_new_data_sgd(last_control_seq, lr=0.01, max_iterations=10, threshold=0.01):
@@ -228,12 +228,12 @@ for epoch in range(epochs):
     __, loss3, __, __ = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
 
     print("Epoch {}:\n\tNew Loss:".format(epoch), loss3)
-    print("\tReconstruction Loss:", reconstruction_loss)
-    print("\tTask Loss:", task_loss)
-    print("\tLoss2:", loss2)
+    # print("\tReconstruction Loss:", reconstruction_loss)
+    # print("\tTask Loss:", task_loss)
+    # print("\tLoss2:", loss2)
     # print("\tDecoded:", prediction1[0])
     # print("\tInput:", new_control_seq)
-    print("\tExpected Reward:", prediction1[1][-1])
+    # print("\tExpected Reward:", prediction1[1][-1])
 
     total_reward = 0
     _new_control_seq = new_control_seq.view(control_sequence_time, joints)
@@ -254,7 +254,7 @@ for epoch in range(epochs):
             # env.render()
 
         total_reward += r
-    print("\tReward {} {}".format(total_reward, xvel))
+    # print("\tReward {} {}".format(total_reward, xvel))
 
     # if not (0.1 < total_reward):
     #     observation = env.reset()
@@ -416,7 +416,7 @@ std_dev_list = [torch.exp(0.5 * lv).cpu().detach().numpy() for lv in variation_l
 encoded_list_transposed = list(zip(*encoded_list))
 std_dev_list_transposed = list(zip(std_dev_list[-1]))
 
-print(std_dev_list_transposed)
+# print(std_dev_list_transposed)
 
 # Create a new figure for the plot
 plt.figure(figsize=(10, 6))
