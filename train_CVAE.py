@@ -226,8 +226,8 @@ for epoch in range(epochs):
     # __, loss, reconstruction_loss, task_loss = autoencoder.evaluate_gradient(new_control_seq, target_value_tensor, direction)
     prediction2, loss2, reconstruction_loss, task_loss = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
     __, loss3, __, __ = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
-
-    print("Epoch {}:\n\tNew Loss:".format(epoch), loss3)
+    print("Epoch {}".format(epoch))
+    # print("Epoch {}:\n\tNew Loss:".format(epoch), loss3)
     # print("\tReconstruction Loss:", reconstruction_loss)
     # print("\tTask Loss:", task_loss)
     # print("\tLoss2:", loss2)
