@@ -158,7 +158,8 @@ def acquire_new_data_sgd(last_control_seq, autoencoder, target_value_tensor, dir
         # Update the control sequence using SGD
         optimizer.step()
 
-        control_seq.clamp_(min=-1, max=1)
+        with torch.no_grad():
+            control_seq.clamp_(min=-1, max=1)
 
     # print("Lowest Loss:", lowest_loss)
     # return prediction, best_seq, lowest_loss
