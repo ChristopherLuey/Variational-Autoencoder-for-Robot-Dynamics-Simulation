@@ -251,7 +251,7 @@ for epoch in range(epochs):
             r += info["x_velocity"]/25
             xvel += info["x_velocity"]/25
             # r += ((info["x_velocity"] ** 2 + info["y_velocity"] ** 2) ** (1/2))/50
-            env.render()
+            # env.render()
 
         total_reward += r
     print("\tReward {} {}".format(total_reward, xvel))
