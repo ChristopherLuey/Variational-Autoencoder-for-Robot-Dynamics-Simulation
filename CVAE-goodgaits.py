@@ -1,3 +1,5 @@
+import pdb
+
 import gym
 import matplotlib
 matplotlib.use('TkAgg')  # Or 'Qt5Agg', 'GTK3Agg', 'macosx', 'TkAgg'
@@ -33,7 +35,7 @@ joints = config["joints"]
 
 from AE.cvae import AugmentedConditionalVariationalAutoencoder
 
-model_kwargs = {'input_size': config['input_size']*joints, 
+model_kwargs = {'input_size': config['input_size']*joints,
                     'latent_size': config['latent_size'],
                     'encoder_layer_sizes': config['encoder_layer_sizes'],
                     'decoder_layer_sizes': config['decoder_layer_sizes'],
@@ -63,6 +65,8 @@ expected_reward_list = []
 
 new_control_seq = (2*torch.rand(control_sequence_length)-1).to(device)
 combined_control_seq = new_control_seq.clone().unsqueeze(0)
+combined_control_seq_batch = new_control_seq.clone().unsqueeze(0)
+
 
 new_control_seq.requires_grad_(True)
 render_frame = 1
@@ -73,152 +77,6 @@ direction_task = torch.tensor([0.0], dtype=torch.float32, device=device)
 direction_prev = torch.tensor([0.0], dtype=torch.float32, device=device)
 
 
-def acquire_new_data(last_control_seq, autoencoder, target_value_tensor, direction):
-    lowest_loss = float('inf')
-    best_seq = None
-    prediction = None
-    # target_value_tensor = target_value_tensor.clone().detach()
-    target_value_tensor = torch.tensor([0.5], device="cuda:0")
-
-    # if (target_value_tensor.item() < 0):
-    #     target_value_tensor.fill_(-target_value_tensor.item())
-
-    for _ in range(samples):
-        # Perturb the control sequence by a random vector
-        perturbation = (torch.rand_like(last_control_seq)-0.5) * perturbation_strength
-        perturbed_seq = torch.clamp(last_control_seq + perturbation, min=-1, max=1).to(device)
-
-        # Evaluate the perturbed sequence without updating the autoencoder weights
-        _prediction, loss, reconstruction_loss, task_loss = autoencoder.evaluate(perturbed_seq, target_value_tensor, direction)
-
-        if loss < lowest_loss:
-            lowest_loss = loss
-            best_seq = perturbed_seq
-            prediction = _prediction
-
-    # print("Lowest Loss:", lowest_loss)
-
-    return prediction, best_seq.detach(), lowest_loss
-
-# def acquire_new_data(last_control_seq, autoencoder, target_value_tensor, direction):
-#     last_control_seq = last_control_seq.to(device)
-#     target_value_tensor = target_value_tensor.clone().detach().to(device)
-#
-#     # Generate all perturbations in one go
-#     perturbations = (torch.rand(samples, *last_control_seq.shape, device=device) - 0.5) * perturbation_strength
-#     perturbed_seqs = torch.clamp(last_control_seq + perturbations, min=-1, max=1)
-#
-#     # Evaluate all perturbed sequences at once without updating the autoencoder weights
-#     predictions, losses, reconstruction_losses, task_losses = autoencoder.evaluate(perturbed_seqs, target_value_tensor, direction)
-#
-#     # Find the perturbed sequence with the lowest loss
-#     lowest_loss_idx = torch.argmin(losses)
-#     lowest_loss = losses[lowest_loss_idx]
-#     best_seq = perturbed_seqs[lowest_loss_idx]
-#     prediction = predictions[lowest_loss_idx]
-#
-#     return prediction, best_seq.detach(), lowest_loss
-
-# def acquire_new_data_grad_descent(last_control_seq):
-#     """
-#     Acquire new data for training the autoencoder.
-#     Returns:
-#     - The new control sequence with the lowest autoencoder objective function value after sampling.
-#     """
-#     # Evaluate the initial sequence without updating the autoencoder weights
-#     _, loss_init = autoencoder.evaluate(last_control_seq.unsqueeze(0), target_value_tensor)
-#     x = last_control_seq
-#     k = 0 # for counting iterations in the while loop
-#     alpha = .2 # learning rate for SGD (stochastic gradiant descent)
-#     gradient = 1 # initialize value for first loop
-#     while gradient<.1:
-#         # initialize array for gradient
-#         grad = np.zeros(samples)
-#         # sample a batch of data points
-#         for n in range(samples):
-#             # Perturb the control sequence by a random vector
-#             perturbation = (torch.rand_like(x)-0.5) * perturbation_strength
-#             perturbed_seq = torch.clamp(x + perturbation, min=0, max=1)
-#             # Evaluate the perturbed sequence without updating the autoencoder weights
-#             _, loss = autoencoder.evaluate(perturbed_seq.unsqueeze(0), target_value_tensor)
-#             grad[n] = loss-loss_init
-#         # Average samples for gradient at x
-#         gradient = np.mean(grad)
-#         x = x - alpha * gradient
-#         k += 1
-#         if k>20:
-#             break
-#     return x
-
-def acquire_new_data_sgd(last_control_seq, autoencoder, target_value_tensor, direction, learning_rate=1e-3):
-    # Ensure last_control_seq requires gradient for optimization
-    control_seq = last_control_seq.clone().detach().requires_grad_(True)
-    optimizer = torch.optim.SGD([control_seq], lr=learning_rate)  # Set up the optimizer
-
-    lowest_loss = float('inf')
-    best_seq = None
-    prediction = None
-
-    for _ in range(samples):
-        optimizer.zero_grad()  # Reset gradients to zero
-
-        # Evaluate the control sequence
-        prediction, loss, reconstruction_loss, task_loss = autoencoder.evaluate_gradient(control_seq, target_value_tensor, direction)
-
-        # Check and update the best sequence
-        # if loss.item() < lowest_loss:
-        #     lowest_loss = loss.item()
-        #     best_seq = control_seq.detach().clone()  # Detach and clone to store without gradients
-
-        # Compute gradients
-        loss.backward()
-
-        # Update the control sequence using SGD
-        optimizer.step()
-
-        with torch.no_grad():
-            control_seq.clamp_(min=-1, max=1)
-
-    # print("Lowest Loss:", lowest_loss)
-    # return prediction, best_seq, lowest_loss
-    return prediction, control_seq.detach(), loss.item()
-
-# def acquire_new_data_sgd(last_control_seq, lr=0.01, max_iterations=10, threshold=0.01):
-#     """
-#     Acquire new data for training the autoencoder using stochastic gradient descent.
-    
-#     Args:
-#     - last_control_seq (torch.Tensor): The last control sequence with requires_grad set to True.
-#     - lr (float): Learning rate for SGD.
-#     - max_iterations (int): Maximum number of iterations for the SGD optimization.
-#     - threshold (float): Threshold for gradient norm for early stopping.
-    
-#     Returns:
-#     - torch.Tensor: The optimized control sequence.
-#     """
-#     # Ensure last_control_seq requires gradients
-#     last_control_seq = last_control_seq.clone().detach().requires_grad_(True).to(device)
-#     optimizer = torch.optim.SGD([last_control_seq], lr=lr)
-    
-#     for iteration in range(max_iterations):
-#         optimizer.zero_grad()
-
-#         # Use the evaluate function to compute the loss
-#         _, loss = autoencoder.evaluate_gradient(last_control_seq.unsqueeze(0), target_value_tensor, direction)
-        
-#         # Backward pass to compute gradients
-#         loss.backward()
-
-#         # Update last_control_seq based on gradients
-#         optimizer.step()
-
-#         # Check gradient norm for early stopping
-#         grad_norm = last_control_seq.grad.norm()
-#         if grad_norm < threshold:
-#             # print(f"Early stopping at iteration {iteration} due to low gradient norm.")
-#             break
-
-#     return last_control_seq.detach()
 torch.autograd.set_detect_anomaly(True)
 
 clear = np.array([0,0,0,0,0,0,0,0])
@@ -226,6 +84,168 @@ epochs = config['epochs']
 epoch_counter = 0
 xvel = 0
 data_con = np.zeros((epochs,control_sequence_length))
+
+
+# select decent gaits
+n_samples = 30
+n_selected_samples = 0
+new_control_seq = (2*torch.rand(control_sequence_length)-1).to(device)
+iter = 0
+while n_selected_samples < n_samples-1:
+    # sample control sequence
+    # perturbation = (torch.rand_like(new_control_seq) - 0.5) * perturbation_strength
+    # perturbed_seq = torch.clamp(new_control_seq + perturbation, min=-1, max=1).to(device)
+
+    perturbed_seq = (2*torch.rand(control_sequence_length)-1).to(device)
+    _new_control_seq = perturbed_seq.view(control_sequence_time, joints)
+    # print(_new_control_seq)
+
+    env.reset()
+
+    # evaluate without updating any network
+    total_reward = 0
+    for i in range(control_sequence_time):
+        action = _new_control_seq[i].cpu().numpy()
+        r = 0
+        t = 10
+        for j in range(t):
+            observation, reward, done, info = env.step(action)
+            # if args["no_render"] != True:
+            # r += (info["x_velocity"] * 2- np.abs(info["y_velocity"]))
+            r += info["x_velocity"] / 25
+            xvel += info["x_velocity"] / 25
+            # r += ((info["x_velocity"] ** 2 + info["y_velocity"] ** 2) ** (1/2))/50
+            # env.render()
+
+        total_reward += r
+
+    # save for training later
+    if total_reward > .6:# and total_reward < .3:
+        combined_control_seq_batch = torch.cat([combined_control_seq_batch, perturbed_seq.unsqueeze(0)], dim=0)
+        for _ in range(100):
+            loss = autoencoder.train_model(perturbed_seq, torch.tensor([0], device="cuda:0"), torch.tensor([0], device="cuda:0"), combined_latent_space[-1])
+        losses.append(loss[0])
+        obj_loss.append(loss[1])
+        # encoded_list.append(loss[3].to("cpu").tolist())
+        encoded_list.append(loss[5].to("cpu").tolist())
+        decoded_list.append(loss[4].to("cpu").tolist())
+        new_control_seq_values.append(perturbed_seq.to("cpu").tolist())
+        variation_list.append(loss[6])
+        n_selected_samples+=1
+    iter += 1
+    print(iter,n_selected_samples,n_selected_samples/iter)
+
+# train decent gaits
+# for
+
+
+# display
+for j in new_control_seq_values:
+    env.reset()
+    j = torch.tensor(j, device="cuda:0")
+    _new_control_seq = j.view(control_sequence_time, joints)
+    for i in range(control_sequence_time):
+        action = _new_control_seq[i].cpu().numpy()
+        r = 0
+        t = 10
+        for j in range(t):
+            observation, reward, done, info = env.step(action)
+            # if args["no_render"] != True:
+            # r += (info["x_velocity"] * 2- np.abs(info["y_velocity"]))
+            r += info["x_velocity"] / 25
+            xvel += info["x_velocity"] / 25
+            # r += ((info["x_velocity"] ** 2 + info["y_velocity"] ** 2) ** (1/2))/50
+            env.render()
+
+
+
+
+
+
+# pdb.set_trace()
+fig, axes = plt.subplots(1, 4, figsize=(12, 6))
+
+# Plot training loss on the first subplot
+axes[0].plot(range(1, n_selected_samples + 1), losses, label="Training Loss")
+axes[0].set_xlabel('Epoch')
+axes[0].set_ylabel('Loss')
+axes[0].set_title('Model Loss Over Time')
+axes[0].legend()
+
+# Plot objective loss on the second subplot
+axes[1].plot(range(1, n_selected_samples + 1), obj_loss, label="Objective Loss")
+axes[1].set_xlabel('Epoch')
+axes[1].set_ylabel('Loss')
+axes[1].set_title('Objective Loss Over Time')
+axes[1].legend()
+
+# Plot new control sequence values on the third subplot
+new_control_seq_values_transposed = list(zip(*new_control_seq_values))
+for seq_index, seq_values in enumerate(new_control_seq_values_transposed):
+    axes[2].plot(range(1, n_selected_samples + 1), seq_values, label=f"Seq {seq_index + 1}")
+axes[2].set_xlabel('Epoch')
+axes[2].set_ylabel('Value')
+axes[2].set_title('New Control Seq Values Over Time')
+
+new_control_seq_values_transposed = list(zip(*decoded_list))
+for seq_index, seq_values in enumerate(new_control_seq_values_transposed):
+    axes[3].plot(range(1, n_selected_samples + 1), seq_values, label=f"Seq {seq_index + 1}")
+axes[3].set_xlabel('Epoch')
+axes[3].set_ylabel('Value')
+axes[3].set_title('New Control Seq Values Over Time')
+
+plt.tight_layout()
+plt.show()
+
+
+
+# Convert log variance to standard deviation for shading
+std_dev_list = [torch.exp(0.5 * lv).cpu().detach().numpy() for lv in variation_list]
+
+# Assuming the structure and size of encoded_list matches with log_var_list for the purpose of this demonstration
+
+# Transposing lists to work with sequences across dimensions
+
+encoded_list_transposed = list(zip(*encoded_list))
+std_dev_list_transposed = list(zip(std_dev_list[-1]))
+
+# print(std_dev_list_transposed)
+
+# Create a new figure for the plot
+plt.figure(figsize=(10, 6))
+
+# Plot each sequence in the encoded list and add variance shading
+for dim_index, (dim_values, dim_std_devs) in enumerate(zip(encoded_list_transposed, std_dev_list_transposed)):
+    _epoch = np.arange(1, len(dim_values) + 1)
+    dim_values = np.array(dim_values)
+    dim_std_devs = np.array(dim_std_devs)
+
+    # Plot the dimension values
+    plt.plot(_epoch, dim_values, label=f"Dimension {dim_index + 1}")
+
+    # Calculate upper and lower bounds for the shaded area using standard deviation
+    upper_bounds = dim_values + dim_std_devs
+    lower_bounds = dim_values - dim_std_devs
+
+    # Add shaded area to represent variance
+    plt.fill_between(_epoch, lower_bounds, upper_bounds, alpha=0.2)
+
+
+plt.xlabel('Epoch')
+plt.ylabel('Encoded Value')
+plt.title('Encoded Sequence Values Over Time')
+plt.legend()
+plt.show()
+
+#axes[2].legend()
+# zero_tensor = torch.zeros(200, 1).to(device)
+# loss = autoencoder.train_model(combined_control_seq_batch, zero_tensor, zero_tensor,combined_latent_space[-1])
+# print(loss)
+
+
+
+
+
 for epoch in range(epochs):
 
     # if epochs % render_frame == 0:  # Conditional render to reduce computation load
@@ -239,13 +259,11 @@ for epoch in range(epochs):
     #     target_value_tensor = target_value_tensor
     # _, loss = autoencoder.evaluate_gradient(new_control_seq.unsqueeze(0), target_value_tensor,direction)
     # print("prior control seq",new_control_seq,loss)
-    
-    prediction1, new_control_seq, l = acquire_new_data(new_control_seq, autoencoder, target_value_tensor, direction)
+
+    prediction1, new_control_seq, l = acquire_new_data_sgd(new_control_seq, autoencoder, target_value_tensor, direction)
     # __, loss, reconstruction_loss, task_loss = autoencoder.evaluate_gradient(new_control_seq, target_value_tensor, direction)
     prediction2, loss2, reconstruction_loss, task_loss = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
     __, loss3, __, __ = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
-    new_control_seq = (2 * torch.rand(control_sequence_length) - 1).to(device)
-
     print("Epoch {}".format(epoch))
     # print("Epoch {}:\n\tNew Loss:".format(epoch), loss3)
     # print("\tReconstruction Loss:", reconstruction_loss)
@@ -271,15 +289,15 @@ for epoch in range(epochs):
             r += info["x_velocity"]/25
             xvel += info["x_velocity"]/25
             # r += ((info["x_velocity"] ** 2 + info["y_velocity"] ** 2) ** (1/2))/50
-            env.render()
+            # env.render()
 
         total_reward += r
     # print("\tReward {} {}".format(total_reward, xvel))
 
-    if (total_reward < 0.1) or (total_reward > 0.12):
-        observation = env.reset()
-        print("\tTry Again")
-        continue
+    # if not (0.1 < total_reward):
+    #     observation = env.reset()
+    #     print("\tTry Again")
+    #     continue
     _total_reward = total_reward
 
     # if total_reward<0:
@@ -292,7 +310,7 @@ for epoch in range(epochs):
     x,y,z,w = observation[1:5]
     dir = math.atan2(2.0 * (w * x + y * z), 1 - 2 * (x**2 + z**2))/(2*math.pi)
     # direction_task.fill_(dir)
-    # dir=0
+    dir=0
     direction.fill_(dir)
     # direction.fill_(total_reward)
 
@@ -306,7 +324,7 @@ for epoch in range(epochs):
 
     #direction = torch.tensor([direction], dtype=torch.float32, device=device)
     #task_reward_list.append(total_reward)
-        
+
 
     # target_value_tensor.fill_(total_reward-target_value_tensor_previous)
     target_value_tensor.fill_(total_reward)
@@ -326,10 +344,10 @@ for epoch in range(epochs):
         _combined_direction = combined_direction.clone()
         _combined_target_value_tensor = combined_target_value_tensor.clone()
 
-    if _combined_target_value_tensor.shape[0] < 5:
-        _combined_target_value_tensor = smooth_tensor(_combined_target_value_tensor, 3).to(device)
+    if epoch < 5:
+        _combined_target_value_tensor = smooth_tensor(_combined_target_value_tensor, 1).to(device)
     else:
-        _combined_target_value_tensor = smooth_tensor(_combined_target_value_tensor, 5).to(device)
+        _combined_target_value_tensor = smooth_tensor(_combined_target_value_tensor, 1).to(device)
 
     task_reward_list.append(_combined_target_value_tensor[-1].item())
 
@@ -362,17 +380,17 @@ for epoch in range(epochs):
 
     losses.append(loss[0])
     obj_loss.append(loss[1])
-    encoded_list.append(loss[5][-1].to("cpu").tolist())
+    encoded_list.append(loss[3][-1].to("cpu").tolist())
     # encoded_list.append(loss[5].to("cpu").tolist())
     decoded_list.append(loss[4].to("cpu").tolist())
-    new_control_seq_values.append(new_control_seq.to("cpu").tolist()) 
+    new_control_seq_values.append(new_control_seq.to("cpu").tolist())
     variation_list.append(loss[6][-1])
 
     # for i in range(5):
     #     observation, reward, done, info = env.step(clear)
     #     env.render()
-    observation = env.reset()
-  
+    # observation = env.reset()
+
 
     # Check if the episode is done
     if done:
