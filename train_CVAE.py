@@ -338,7 +338,8 @@ for epoch in range(epochs):
     # print(combined_direction.shape)
     # print(combined_target_value_tensor.shape)
 
-    loss = autoencoder.train_model(_combined_control_seq[1:], _combined_target_value_tensor[1:], _combined_direction[1:], combined_latent_space[1:])
+    for __ in range(50):
+        loss = autoencoder.train_model(_combined_control_seq[1:], _combined_target_value_tensor[1:], _combined_direction[1:], combined_latent_space[1:])
     # loss = autoencoder.train_model(new_control_seq, target_value_tensor, direction)
 
     # ep = _

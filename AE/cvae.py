@@ -208,7 +208,7 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
 
         # task_loss, task_pred = self.task_network.train_model(_latent_representation.clone().detach(), target_value, condition)
         # task_loss = 0
-        task_loss, task_pred = self.task_network.train_model(mean.clone().detach()*5, target_value, condition.clone().detach())
+        task_loss, task_pred = self.task_network.train_model(mean.clone().detach(), target_value, condition.clone().detach())
 
         self.training_epochs+=1
 
@@ -258,10 +258,10 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
         with torch.no_grad():
             reconstruction_loss, decoded, latent_representation, mean, log_variation = self.autoencoder.evaluate(input_batch, self.direction)
             # task_loss, task_pred = self.task_network.evaluate(latent_representation, condition)
-            task_loss, task_pred = self.task_network.evaluate(mean*5, condition)
+            task_loss, task_pred = self.task_network.evaluate(mean, condition)
 
             combined_loss = self.reconstruction_weight[1]*reconstruction_loss + self.task_weight[1]*task_loss
-        return (decoded, task_pred), combined_loss, reconstruction_loss, task_loss
+        return (decoded, task_pred), combined_loss, reconstruction_loss, task_loss, mean, log_variation
 
     def evaluate_gradient(self, input_batch, target_value, condition):
         self.eval()

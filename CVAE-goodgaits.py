@@ -67,6 +67,9 @@ new_control_seq = (2*torch.rand(control_sequence_length)-1).to(device)
 combined_control_seq = new_control_seq.clone().unsqueeze(0)
 combined_control_seq_batch = new_control_seq.clone().unsqueeze(0)
 
+test_new_control_seq = (2*torch.rand(control_sequence_length)-1).to(device)
+test_target_value_tensor = torch.tensor([0.0], dtype=torch.float32, device=device)
+test_direction = torch.tensor([0.0], dtype=torch.float32, device=device)
 
 new_control_seq.requires_grad_(True)
 render_frame = 1
@@ -87,22 +90,19 @@ data_con = np.zeros((epochs,control_sequence_length))
 
 
 # select decent gaits
-n_samples = 30
 n_selected_samples = 0
-new_control_seq = (2*torch.rand(control_sequence_length)-1).to(device)
+#new_control_seq = (2*torch.rand(control_sequence_length)-1).to(device)
 iter = 0
-while n_selected_samples < n_samples-1:
-    # sample control sequence
-    # perturbation = (torch.rand_like(new_control_seq) - 0.5) * perturbation_strength
-    # perturbed_seq = torch.clamp(new_control_seq + perturbation, min=-1, max=1).to(device)
+collected = 0
+testing_epochs = 0
+
+
+while True:
 
     perturbed_seq = (2*torch.rand(control_sequence_length)-1).to(device)
     _new_control_seq = perturbed_seq.view(control_sequence_time, joints)
-    # print(_new_control_seq)
-
     env.reset()
 
-    # evaluate without updating any network
     total_reward = 0
     for i in range(control_sequence_time):
         action = _new_control_seq[i].cpu().numpy()
@@ -116,34 +116,105 @@ while n_selected_samples < n_samples-1:
             xvel += info["x_velocity"] / 25
             # r += ((info["x_velocity"] ** 2 + info["y_velocity"] ** 2) ** (1/2))/50
             # env.render()
-
         total_reward += r
+    for i in range(50):
+        observation, reward, done, info = env.step(action)
+        #env.render()
 
-    # save for training later
-    if total_reward > .6:# and total_reward < .3:
-        combined_control_seq_batch = torch.cat([combined_control_seq_batch, perturbed_seq.unsqueeze(0)], dim=0)
-        for _ in range(100):
-            loss = autoencoder.train_model(perturbed_seq, torch.tensor([0], device="cuda:0"), torch.tensor([0], device="cuda:0"), combined_latent_space[-1])
-        losses.append(loss[0])
-        obj_loss.append(loss[1])
-        # encoded_list.append(loss[3].to("cpu").tolist())
-        encoded_list.append(loss[5].to("cpu").tolist())
-        decoded_list.append(loss[4].to("cpu").tolist())
-        new_control_seq_values.append(perturbed_seq.to("cpu").tolist())
-        variation_list.append(loss[6])
-        n_selected_samples+=1
-    iter += 1
-    print(iter,n_selected_samples,n_selected_samples/iter)
+    total_reward = info["x_position"]
+    y_reward = info["y_position"]
+    x,y,z,w = observation[1:5]
+    dir = math.atan2(2.0 * (w * x + y * z), 1 - 2 * (x**2 + z**2))/(2*math.pi)
+    print(total_reward, y_reward, dir)
+    if 0.45 > total_reward > 0.5 and -0.1 < y_reward < 0.1 and (-0.45 <= dir <=-0.5):
+        if collected==0:
+            test_new_control_seq = perturbed_seq.detach().clone()
+            test_target_value_tensor = target_value_tensor.detach().clone()
+            test_direction = direction.detach().clone()
+        elif collected == 1:
+            combined_control_seq_batch = perturbed_seq.unsqueeze(0)
+            combined_direction = direction.unsqueeze(0)
+            combined_target_value_tensor = target_value_tensor.unsqueeze(0)
+
+        else:
+            combined_control_seq_batch = torch.cat([combined_control_seq_batch, perturbed_seq.unsqueeze(0)], dim=0)
+            combined_direction = torch.cat([combined_direction, direction.unsqueeze(0)], dim=0)
+            combined_target_value_tensor = torch.cat([combined_target_value_tensor, target_value_tensor.unsqueeze(0)], dim=0)
+            for _ in range(20):
+                loss = autoencoder.train_model(combined_control_seq_batch, combined_target_value_tensor, combined_direction, combined_latent_space[-1])
+
+            #loss = autoencoder.train_model(train_set, train_set_target, train_set_direction, combined_latent_space[-1])
+            (decoded, task_pred), combined_loss, reconstruction_loss, task_loss, mean, log_variation = autoencoder.evaluate(test_new_control_seq, test_target_value_tensor, test_direction)
+            losses.append(reconstruction_loss)
+            obj_loss.append(loss[1])
+            # encoded_list.append(loss[3].to("cpu").tolist())
+            encoded_list.append(mean.to("cpu").tolist())
+            decoded_list.append(decoded.to("cpu").tolist())
+            new_control_seq_values.append(perturbed_seq.to("cpu").tolist())
+            variation_list.append(log_variation)
+            testing_epochs+=1
+        collected+=1
+    iter+=1
+    print(iter, testing_epochs, testing_epochs/iter)
+
+    if epochs == testing_epochs:
+        break
+
+# while n_selected_samples < n_samples-1:
+#     # sample control sequence
+#     # perturbation = (torch.rand_like(new_control_seq) - 0.5) * perturbation_strength
+#     # perturbed_seq = torch.clamp(new_control_seq + perturbation, min=-1, max=1).to(device)
+#
+#     perturbed_seq = (2*torch.rand(control_sequence_length)-1).to(device)
+#     _new_control_seq = perturbed_seq.view(control_sequence_time, joints)
+#     # print(_new_control_seq)
+#
+#     env.reset()
+#
+#     # evaluate without updating any network
+#     total_reward = 0
+#     for i in range(control_sequence_time):
+#         action = _new_control_seq[i].cpu().numpy()
+#         r = 0
+#         t = 10
+#         for j in range(t):
+#             observation, reward, done, info = env.step(action)
+#             # if args["no_render"] != True:
+#             # r += (info["x_velocity"] * 2- np.abs(info["y_velocity"]))
+#             r += info["x_velocity"] / 25
+#             xvel += info["x_velocity"] / 25
+#             # r += ((info["x_velocity"] ** 2 + info["y_velocity"] ** 2) ** (1/2))/50
+#             # env.render()
+#
+#         total_reward += r
+#
+#     # save for training later
+#     if total_reward > .5:# and total_reward < .3:
+#         combined_control_seq_batch = torch.cat([combined_control_seq_batch, perturbed_seq.unsqueeze(0)], dim=0)
+#         for _ in range(100):
+#             loss = autoencoder.train_model(combined_control_seq_batch, torch.tensor([0], device="cuda:0"), torch.tensor([0], device="cuda:0"), combined_latent_space[-1])
+#         losses.append(loss[0])
+#         obj_loss.append(loss[1])
+#         # encoded_list.append(loss[3].to("cpu").tolist())
+#         encoded_list.append(loss[5].to("cpu").tolist())
+#         decoded_list.append(loss[4].to("cpu").tolist())
+#         new_control_seq_values.append(perturbed_seq.to("cpu").tolist())
+#         variation_list.append(loss[6])
+#         n_selected_samples+=1
+#     iter += 1
+#     print(iter,n_selected_samples,n_selected_samples/iter)
 
 # train decent gaits
 # for
 
+pdb.set_trace()
 
 # display
 for j in new_control_seq_values:
-    env.reset()
     j = torch.tensor(j, device="cuda:0")
     _new_control_seq = j.view(control_sequence_time, joints)
+    env.reset()
+
     for i in range(control_sequence_time):
         action = _new_control_seq[i].cpu().numpy()
         r = 0
@@ -156,43 +227,39 @@ for j in new_control_seq_values:
             xvel += info["x_velocity"] / 25
             # r += ((info["x_velocity"] ** 2 + info["y_velocity"] ** 2) ** (1/2))/50
             env.render()
+    for i in range(20):
+        observation, reward, done, info = env.step(action)
+        env.render()
 
+pdb.set_trace()
+print()
 
-
-
-
-
-# pdb.set_trace()
-fig, axes = plt.subplots(1, 4, figsize=(12, 6))
-
+fig, axes = plt.subplots(1, 2, figsize=(12, 6))
 # Plot training loss on the first subplot
-axes[0].plot(range(1, n_selected_samples + 1), losses, label="Training Loss")
+axes[0].plot(range(1, testing_epochs + 1), losses, label="Training Loss")
 axes[0].set_xlabel('Epoch')
-axes[0].set_ylabel('Loss')
-axes[0].set_title('Model Loss Over Time')
+axes[0].set_ylabel('Loss (MSE)')
+axes[0].set_title('Validation Loss per Epoch')
 axes[0].legend()
 
-# Plot objective loss on the second subplot
-axes[1].plot(range(1, n_selected_samples + 1), obj_loss, label="Objective Loss")
-axes[1].set_xlabel('Epoch')
-axes[1].set_ylabel('Loss')
-axes[1].set_title('Objective Loss Over Time')
-axes[1].legend()
-
-# Plot new control sequence values on the third subplot
-new_control_seq_values_transposed = list(zip(*new_control_seq_values))
-for seq_index, seq_values in enumerate(new_control_seq_values_transposed):
-    axes[2].plot(range(1, n_selected_samples + 1), seq_values, label=f"Seq {seq_index + 1}")
-axes[2].set_xlabel('Epoch')
-axes[2].set_ylabel('Value')
-axes[2].set_title('New Control Seq Values Over Time')
+# # Plot new control sequence values on the third subplot
+# new_control_seq_values_transposed = list(zip(*new_control_seq_values))
+# for seq_index, seq_values in enumerate(new_control_seq_values_transposed):
+#     axes[1].plot(range(1, testing_epochs + 1), seq_values, label=f"Seq {seq_index + 1}")
+# axes[1].set_xlabel('Epoch')
+# axes[1].set_ylabel('Torque')
+# axes[1].set_title('Input Control Sequence')
 
 new_control_seq_values_transposed = list(zip(*decoded_list))
 for seq_index, seq_values in enumerate(new_control_seq_values_transposed):
-    axes[3].plot(range(1, n_selected_samples + 1), seq_values, label=f"Seq {seq_index + 1}")
-axes[3].set_xlabel('Epoch')
-axes[3].set_ylabel('Value')
-axes[3].set_title('New Control Seq Values Over Time')
+    axes[1].plot(range(1, testing_epochs + 1), seq_values, label=f"Seq {seq_index + 1}")
+
+for value in list(test_new_control_seq.cpu().numpy()):
+    axes[1].axhline(y=value, color='r', linestyle='--', linewidth=1)
+
+axes[1].set_xlabel('Epoch')
+axes[1].set_ylabel('Torque')
+axes[1].set_title('Reconstructed Control Sequence')
 
 plt.tight_layout()
 plt.show()
@@ -232,8 +299,8 @@ for dim_index, (dim_values, dim_std_devs) in enumerate(zip(encoded_list_transpos
 
 
 plt.xlabel('Epoch')
-plt.ylabel('Encoded Value')
-plt.title('Encoded Sequence Values Over Time')
+plt.ylabel('Latent Value')
+plt.title('Latent Space Mean and Variation per Epoch')
 plt.legend()
 plt.show()
 
