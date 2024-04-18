@@ -119,14 +119,14 @@ while True:
         total_reward += r
     for i in range(50):
         observation, reward, done, info = env.step(action)
-        #env.render()
+        # env.render()
 
     total_reward = info["x_position"]
     y_reward = info["y_position"]
     x,y,z,w = observation[1:5]
-    dir = math.atan2(2.0 * (w * x + y * z), 1 - 2 * (x**2 + z**2))/(2*math.pi)
+    dir = math.atan2(2.0 * (w * x + y * z), 1 - 2 * (x**2 + z**2))/(math.pi)
     print(total_reward, y_reward, dir)
-    if 0.45 > total_reward > 0.5 and -0.1 < y_reward < 0.1 and (-0.45 <= dir <=-0.5):
+    if (0.35 < total_reward < 0.4) and (-0.1 < y_reward < 0.1) and (0.9 <= abs(dir) <= 1.0):
         if collected==0:
             test_new_control_seq = perturbed_seq.detach().clone()
             test_target_value_tensor = target_value_tensor.detach().clone()
