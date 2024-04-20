@@ -53,15 +53,15 @@ target_value_tensor_previous = 0
 combined_latent_space = torch.zeros(config['latent_size'], dtype=torch.float32, device="cuda:0").unsqueeze(0)
 
 
-losses = []
-obj_loss = []
+losses = [[], []]
+obj_loss = [[],[]]
 new_control_seq_values = []
-task_reward_list = []
-encoded_list = []
-decoded_list = []
-direction_list = []
-variation_list = []
-expected_reward_list = []
+task_reward_list = [[],[]]
+encoded_list = [[],[]]
+decoded_list = [[],[]]
+direction_list = [[],[]]
+variation_list = [[],[]]
+expected_reward_list = [[],[]]
 
 new_control_seq = (2*torch.rand(control_sequence_length)-1).to(device)
 combined_control_seq = new_control_seq.clone().unsqueeze(0)
@@ -70,6 +70,10 @@ combined_control_seq_batch = new_control_seq.clone().unsqueeze(0)
 test_new_control_seq = (2*torch.rand(control_sequence_length)-1).to(device)
 test_target_value_tensor = torch.tensor([0.0], dtype=torch.float32, device=device)
 test_direction = torch.tensor([0.0], dtype=torch.float32, device=device)
+
+test_new_control_seq2 = (2*torch.rand(control_sequence_length)-1).to(device)
+test_target_value_tensor2 = torch.tensor([0.0], dtype=torch.float32, device=device)
+test_direction2 = torch.tensor([0.0], dtype=torch.float32, device=device)
 
 new_control_seq.requires_grad_(True)
 render_frame = 1
@@ -125,33 +129,48 @@ while True:
     y_reward = info["y_position"]
     x,y,z,w = observation[1:5]
     dir = math.atan2(2.0 * (w * x + y * z), 1 - 2 * (x**2 + z**2))/(math.pi)
+    direction.fill_(dir)
     print(total_reward, y_reward, dir)
-    if (0.35 < total_reward < 0.4) and (-0.1 < y_reward < 0.1) and (0.9 <= abs(dir) <= 1.0):
+    #if (0.35 < total_reward < 0.4) and (-0.1 < y_reward < 0.1): #and (0.9 <= abs(dir) <= 1.0):
+    if True:
         if collected==0:
             test_new_control_seq = perturbed_seq.detach().clone()
             test_target_value_tensor = target_value_tensor.detach().clone()
             test_direction = direction.detach().clone()
         elif collected == 1:
-            combined_control_seq_batch = perturbed_seq.unsqueeze(0)
-            combined_direction = direction.unsqueeze(0)
+            test_new_control_seq2 = perturbed_seq.detach().clone()
+            test_target_value_tensor2 = target_value_tensor.detach().clone()
+            test_direction2 = direction.detach().clone()
+        elif collected == 2:
+            combined_control_seq_batch = perturbed_seq.unsqueeze(0).detach().clone()
+            combined_direction = direction.unsqueeze(0).detach().clone()
             combined_target_value_tensor = target_value_tensor.unsqueeze(0)
 
         else:
-            combined_control_seq_batch = torch.cat([combined_control_seq_batch, perturbed_seq.unsqueeze(0)], dim=0)
-            combined_direction = torch.cat([combined_direction, direction.unsqueeze(0)], dim=0)
+            combined_control_seq_batch = torch.cat([combined_control_seq_batch, perturbed_seq.unsqueeze(0).detach().clone()], dim=0)
+            combined_direction = torch.cat([combined_direction, direction.unsqueeze(0).detach().clone()], dim=0)
             combined_target_value_tensor = torch.cat([combined_target_value_tensor, target_value_tensor.unsqueeze(0)], dim=0)
-            for _ in range(20):
+            for _ in range(30):
                 loss = autoencoder.train_model(combined_control_seq_batch, combined_target_value_tensor, combined_direction, combined_latent_space[-1])
 
             #loss = autoencoder.train_model(train_set, train_set_target, train_set_direction, combined_latent_space[-1])
             (decoded, task_pred), combined_loss, reconstruction_loss, task_loss, mean, log_variation = autoencoder.evaluate(test_new_control_seq, test_target_value_tensor, test_direction)
-            losses.append(reconstruction_loss)
-            obj_loss.append(loss[1])
+            losses[0].append(reconstruction_loss)
+            obj_loss[0].append(loss[1])
             # encoded_list.append(loss[3].to("cpu").tolist())
-            encoded_list.append(mean.to("cpu").tolist())
-            decoded_list.append(decoded.to("cpu").tolist())
+            encoded_list[0].append(mean.to("cpu").tolist())
+            decoded_list[0].append(decoded.to("cpu").tolist())
             new_control_seq_values.append(perturbed_seq.to("cpu").tolist())
-            variation_list.append(log_variation)
+            variation_list[0].append(log_variation)
+
+            (decoded, task_pred), combined_loss, reconstruction_loss, task_loss, mean, log_variation = autoencoder.evaluate(test_new_control_seq, test_target_value_tensor, test_direction)
+            losses[1].append(reconstruction_loss)
+            obj_loss[1].append(loss[1])
+            # encoded_list.append(loss[3].to("cpu").tolist())
+            encoded_list[1].append(mean.to("cpu").tolist())
+            decoded_list[1].append(decoded.to("cpu").tolist())
+            new_control_seq_values.append(perturbed_seq.to("cpu").tolist())
+            variation_list[1].append(log_variation)
             testing_epochs+=1
         collected+=1
     iter+=1
@@ -233,76 +252,76 @@ for j in new_control_seq_values:
 
 pdb.set_trace()
 print()
+plt.rcParams.update({'font.size': 22})  # Adjust this value as needed
 
-fig, axes = plt.subplots(1, 2, figsize=(12, 6))
-# Plot training loss on the first subplot
-axes[0].plot(range(1, testing_epochs + 1), losses, label="Training Loss")
-axes[0].set_xlabel('Epoch')
-axes[0].set_ylabel('Loss (MSE)')
-axes[0].set_title('Validation Loss per Epoch')
-axes[0].legend()
+for i in range(2):
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+    # Plot training loss on the first subplot
+    axes[0].plot(range(1, testing_epochs + 1), losses[i], label="Training Loss", linewidth=3)
+    axes[0].set_xlabel('Epoch')
+    axes[0].set_ylabel('Loss (MSE)')
+    axes[0].set_title('Validation Loss per Epoch')
+    axes[0].legend()
 
-# # Plot new control sequence values on the third subplot
-# new_control_seq_values_transposed = list(zip(*new_control_seq_values))
-# for seq_index, seq_values in enumerate(new_control_seq_values_transposed):
-#     axes[1].plot(range(1, testing_epochs + 1), seq_values, label=f"Seq {seq_index + 1}")
-# axes[1].set_xlabel('Epoch')
-# axes[1].set_ylabel('Torque')
-# axes[1].set_title('Input Control Sequence')
+    # # Plot new control sequence values on the third subplot
+    # new_control_seq_values_transposed = list(zip(*new_control_seq_values))
+    # for seq_index, seq_values in enumerate(new_control_seq_values_transposed):
+    #     axes[1].plot(range(1, testing_epochs + 1), seq_values, label=f"Seq {seq_index + 1}")
+    # axes[1].set_xlabel('Epoch')
+    # axes[1].set_ylabel('Torque')
+    # axes[1].set_title('Input Control Sequence')
 
-new_control_seq_values_transposed = list(zip(*decoded_list))
-for seq_index, seq_values in enumerate(new_control_seq_values_transposed):
-    axes[1].plot(range(1, testing_epochs + 1), seq_values, label=f"Seq {seq_index + 1}")
+    new_control_seq_values_transposed = list(zip(*decoded_list[i]))
+    for seq_index, seq_values in enumerate(new_control_seq_values_transposed):
+        axes[1].plot(range(1, testing_epochs + 1), seq_values, label=f"Seq {seq_index + 1}", linewidth=3)
 
-for value in list(test_new_control_seq.cpu().numpy()):
-    axes[1].axhline(y=value, color='r', linestyle='--', linewidth=1)
+    for value in list(test_new_control_seq.cpu().numpy()):
+        axes[1].axhline(y=value, color='r', linestyle='--', linewidth=1)
 
-axes[1].set_xlabel('Epoch')
-axes[1].set_ylabel('Torque')
-axes[1].set_title('Reconstructed Control Sequence')
+    axes[1].set_xlabel('Epoch')
+    axes[1].set_ylabel('Torque')
+    axes[1].set_title('Reconstructed Control Sequence')
 
-plt.tight_layout()
-plt.show()
+    plt.tight_layout()
+    plt.show()
 
+    # Convert log variance to standard deviation for shading
+    std_dev_list = [torch.exp(0.5 * lv).cpu().detach().numpy() for lv in variation_list[i]]
 
+    # Assuming the structure and size of encoded_list matches with log_var_list for the purpose of this demonstration
 
-# Convert log variance to standard deviation for shading
-std_dev_list = [torch.exp(0.5 * lv).cpu().detach().numpy() for lv in variation_list]
+    # Transposing lists to work with sequences across dimensions
 
-# Assuming the structure and size of encoded_list matches with log_var_list for the purpose of this demonstration
+    encoded_list_transposed = list(zip(*encoded_list[i]))
+    std_dev_list_transposed = list(zip(std_dev_list[-1]))
 
-# Transposing lists to work with sequences across dimensions
+    # print(std_dev_list_transposed)
 
-encoded_list_transposed = list(zip(*encoded_list))
-std_dev_list_transposed = list(zip(std_dev_list[-1]))
+    # Create a new figure for the plot
+    plt.figure(figsize=(10, 6))
 
-# print(std_dev_list_transposed)
+    # Plot each sequence in the encoded list and add variance shading
+    for dim_index, (dim_values, dim_std_devs) in enumerate(zip(encoded_list_transposed, std_dev_list_transposed)):
+        _epoch = np.arange(1, len(dim_values) + 1)
+        dim_values = np.array(dim_values)
+        dim_std_devs = np.array(dim_std_devs)
 
-# Create a new figure for the plot
-plt.figure(figsize=(10, 6))
+        # Plot the dimension values
+        plt.plot(_epoch, dim_values, label=f"Dimension {dim_index + 1}", linewidth=3)
 
-# Plot each sequence in the encoded list and add variance shading
-for dim_index, (dim_values, dim_std_devs) in enumerate(zip(encoded_list_transposed, std_dev_list_transposed)):
-    _epoch = np.arange(1, len(dim_values) + 1)
-    dim_values = np.array(dim_values)
-    dim_std_devs = np.array(dim_std_devs)
+        # Calculate upper and lower bounds for the shaded area using standard deviation
+        upper_bounds = dim_values + dim_std_devs
+        lower_bounds = dim_values - dim_std_devs
 
-    # Plot the dimension values
-    plt.plot(_epoch, dim_values, label=f"Dimension {dim_index + 1}")
-
-    # Calculate upper and lower bounds for the shaded area using standard deviation
-    upper_bounds = dim_values + dim_std_devs
-    lower_bounds = dim_values - dim_std_devs
-
-    # Add shaded area to represent variance
-    plt.fill_between(_epoch, lower_bounds, upper_bounds, alpha=0.2)
+        # Add shaded area to represent variance
+        plt.fill_between(_epoch, lower_bounds, upper_bounds, alpha=0.3)
 
 
-plt.xlabel('Epoch')
-plt.ylabel('Latent Value')
-plt.title('Latent Space Mean and Variation per Epoch')
-plt.legend()
-plt.show()
+    plt.xlabel('Epoch')
+    plt.ylabel('Latent Value')
+    plt.title('Latent Space Mean and Variation per Epoch')
+    # plt.legend()
+    plt.show()
 
 #axes[2].legend()
 # zero_tensor = torch.zeros(200, 1).to(device)

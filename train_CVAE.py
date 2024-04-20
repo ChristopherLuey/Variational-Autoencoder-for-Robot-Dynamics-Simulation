@@ -276,11 +276,11 @@ for epoch in range(epochs):
         total_reward += r
     # print("\tReward {} {}".format(total_reward, xvel))
 
-    if (total_reward < 0.1) or (total_reward > 0.12):
-        observation = env.reset()
-        print("\tTry Again")
-        continue
-    _total_reward = total_reward
+    # if (total_reward < 0.1) or (total_reward > 0.12):
+    #     observation = env.reset()
+    #     print("\tTry Again")
+    #     continue
+    # _total_reward = total_reward
 
     # if total_reward<0:
     #     total_reward = 0

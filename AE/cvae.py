@@ -71,7 +71,7 @@ class BasicAutoencoder(nn.Module):
     def loss_function(self, input_batch, decoded, mean, log_variation):
         reproduction_loss = self.criterion(decoded, input_batch)
         # reproduction_loss = nn.functional.mse_loss(decoded, input_batch[0], reduction='sum')
-        KLD = -0.0 * torch.sum(1+ log_variation - mean.pow(2) - log_variation.exp())
+        KLD = -0.00 * torch.sum(1+ log_variation - mean.pow(2) - log_variation.exp())
         return reproduction_loss + KLD
 
     def train_model(self, input_batch, condition):
