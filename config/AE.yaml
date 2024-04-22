@@ -1,12 +1,12 @@
 AntEnv_v3:
     joints: 8
     input_size: 2
-    latent_size: 8
-    encoder_layer_sizes: [12]
-    decoder_layer_sizes: [12]
-    task_layer_sizes: [8,1]
+    latent_size: 4
+    encoder_layer_sizes: [12,8,6]
+    decoder_layer_sizes: [6,8,12]
+    task_layer_sizes: [4,1]
 #    task_layer_sizes: [1,1]
     condition_size: 1
     samples: 100
-    perturbation_strength: 0.1
-    epochs: 600
+    perturbation_strength: 0.05
+    epochs: 500

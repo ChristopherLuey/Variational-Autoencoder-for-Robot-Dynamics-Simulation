@@ -131,7 +131,8 @@ while True:
     dir = math.atan2(2.0 * (w * x + y * z), 1 - 2 * (x**2 + z**2))/(math.pi)
     direction.fill_(dir)
     print(total_reward, y_reward, dir)
-    #if (0.35 < total_reward < 0.4) and (-0.1 < y_reward < 0.1): #and (0.9 <= abs(dir) <= 1.0):
+    target_value_tensor.fill_(total_reward)
+    # if (0.35 < total_reward < 0.4) and (-0.1 < y_reward < 0.1): #and (0.9 <= abs(dir) <= 1.0):
     if True:
         if collected==0:
             test_new_control_seq = perturbed_seq.detach().clone()
@@ -163,7 +164,7 @@ while True:
             new_control_seq_values.append(perturbed_seq.to("cpu").tolist())
             variation_list[0].append(log_variation)
 
-            (decoded, task_pred), combined_loss, reconstruction_loss, task_loss, mean, log_variation = autoencoder.evaluate(test_new_control_seq, test_target_value_tensor, test_direction)
+            (decoded, task_pred), combined_loss, reconstruction_loss, task_loss, mean, log_variation = autoencoder.evaluate(test_new_control_seq2, test_target_value_tensor2, test_direction2)
             losses[1].append(reconstruction_loss)
             obj_loss[1].append(loss[1])
             # encoded_list.append(loss[3].to("cpu").tolist())

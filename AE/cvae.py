@@ -46,9 +46,9 @@ class BasicAutoencoder(nn.Module):
         self.encoder = CVAEEncoder(full_encoder_sizes, latent_size)
         full_decoder_sizes = [latent_size + condition_size] + decoder_layer_sizes + [input_size]
         self.decoder = CVAEDecoder(full_decoder_sizes, latent_size, output_activation=output_activation)
-        self.learning_rate = 1e-3
+        self.learning_rate = 1e-2
         self.optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
-        self.criterion = nn.MSELoss()
+        self.criterion = nn.MSELoss(reduction='none')
 
     def forward(self, x, condition):
         mean, log_variation = self.encoder(torch.cat((x, condition), dim=-1))
@@ -68,16 +68,18 @@ class BasicAutoencoder(nn.Module):
         # return mean + eps * std
         return mean
 
-    def loss_function(self, input_batch, decoded, mean, log_variation):
-        reproduction_loss = self.criterion(decoded, input_batch)
-        # reproduction_loss = nn.functional.mse_loss(decoded, input_batch[0], reduction='sum')
-        KLD = -0.00 * torch.sum(1+ log_variation - mean.pow(2) - log_variation.exp())
+    def loss_function(self, input_batch, decoded, mean, log_variation, normalized_weights):
+        reproduction_loss = torch.mean(normalized_weights * self.criterion(decoded, input_batch))
+        #reproduction_loss = torch.mean(normalized_weights * (input_batch - decoded).pow(2))
+        #reproduction_loss = torch.mean(normalized_weights * reproduction_loss)
+
+        KLD = -0.0 * torch.sum(1+ log_variation - mean.pow(2) - log_variation.exp())
         return reproduction_loss + KLD
 
-    def train_model(self, input_batch, condition):
+    def train_model(self, input_batch, condition, weights):
         self.train()
         decoded, latent_representation, mean, log_variation= self.forward(input_batch, condition)
-        loss = self.loss_function(input_batch, decoded, mean, log_variation)
+        loss = self.loss_function(input_batch, decoded, mean, log_variation, weights)
         self.optimizer.zero_grad()
         loss.backward(retain_graph=True)
         self.optimizer.step()
@@ -86,7 +88,7 @@ class BasicAutoencoder(nn.Module):
     def evaluate(self,input_batch, condition):
         self.eval()
         decoded, latent_representation, mean, log_variation = self.forward(input_batch, condition)
-        loss = self.loss_function(input_batch, decoded, mean, log_variation)
+        loss = self.loss_function(input_batch, decoded, mean, log_variation, 1)
         return loss, decoded, latent_representation, mean, log_variation
 
 
@@ -110,13 +112,13 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
 
         self.criterion = nn.MSELoss()  # Use Mean Squared Error Loss for non-binary data
         self.last_loss = None
-        self.learning_rate = 1e-5
+        self.learning_rate = 1e-3
         self.optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
         self.optimizer_autoencoder = optim.Adam(self.autoencoder.parameters(), lr=self.learning_rate)
         self.optimizer_task_network = optim.Adam(self.task_network.parameters(), lr=1e-2)
 
-        self.reconstruction_weight = [1, 1]
-        self.task_weight = [1, 1]
+        self.reconstruction_weight = [0.8, 1]
+        self.task_weight = [0.2,0]
 
         self.direction = torch.tensor([0.0], dtype=torch.float32, device="cuda:0")
         self.training_epochs = 0
@@ -195,20 +197,62 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
     #     self.last_loss = combined_loss.item()
     #     return (reconstruction_loss, task_loss, reconstruction_loss+task_loss, latent_representation, decoded, mean, log_variation)
 
-    def train_model(self,input_batch, target_value, condition, _latent_representation):
-        self.train()
-        zeros_direction = torch.zeros(input_batch.size(0), 1, dtype=input_batch.dtype, device=input_batch.device)
+    def train_model(self,input_batch, target_value, condition, _latent_representation, iter=1):
+        for layer in self.children():
+            if hasattr(layer, 'reset_parameters'):
+                layer.reset_parameters()
+        for layer in self.task_network.children():
+            if hasattr(layer, 'reset_parameters'):
+                layer.reset_parameters()
 
-        reconstruction_loss, decoded, latent_representation, mean, log_variation = self.autoencoder.train_model(input_batch, condition)
+        for layer in self.autoencoder.encoder.children():
+            if hasattr(layer, 'reset_parameters'):
+                layer.reset_parameters()
+        for layer in self.autoencoder.decoder.children():
+            if hasattr(layer, 'reset_parameters'):
+                layer.reset_parameters()
+
+        # # Find indices where target_value is greater than 0
+        # positive_indices = target_value > 0
+        # # Find indices where target_value is less than 0
+        # negative_indices = target_value < 0
         #
-        if _latent_representation.shape[0] == 0:
-            _latent_representation = latent_representation
-        else:
-            _latent_representation = torch.cat([_latent_representation, latent_representation[-1]])
+        # # Split input_batch and condition based on positive_indices
+        # input_batch_positive = input_batch[positive_indices]
+        # condition_positive = condition[positive_indices]
+        #
+        # # Split input_batch and condition based on negative_indices
+        # input_batch_negative = input_batch[negative_indices]
+        # condition_negative = condition[negative_indices]
 
-        # task_loss, task_pred = self.task_network.train_model(_latent_representation.clone().detach(), target_value, condition)
-        # task_loss = 0
-        task_loss, task_pred = self.task_network.train_model(mean.clone().detach(), target_value, condition.clone().detach())
+        weights_clamped = torch.clamp(target_value, min=0, max=1)
+        # weights_clamped = target_value
+        max_weight = weights_clamped.max()
+        if max_weight > 0:
+            normalized_weights = weights_clamped / max_weight
+        else:
+            normalized_weights = weights_clamped
+
+        # if target_value < 0:
+        #     normalized_weights = -torch.divide(target_value, target_value)
+        # else:
+        #     normalized_weights = torch.divide(target_value, target_value)
+
+
+        for i in range(iter):
+            self.train()
+            #zeros_direction = torch.zeros(input_batch.size(0), 1, dtype=input_batch.dtype, device=input_batch.device)
+
+            reconstruction_loss, decoded, latent_representation, mean, log_variation = self.autoencoder.train_model(input_batch, condition, normalized_weights)
+            #
+            if _latent_representation.shape[0] == 0:
+                _latent_representation = latent_representation
+            else:
+                _latent_representation = torch.cat([_latent_representation, latent_representation[-1]])
+
+            # task_loss, task_pred = self.task_network.train_model(_latent_representation.clone().detach(), target_value, condition)
+            # task_loss = 0
+            task_loss, task_pred = self.task_network.train_model(mean.clone().detach(), target_value, condition.clone().detach(), normalized_weights)
 
         self.training_epochs+=1
 
@@ -321,7 +365,7 @@ class AugmentedConditionalVariationalAutoencoder(nn.Module):
     
 
 class TaskNetwork(nn.Module):
-    def __init__(self, latent_size, task_layer_sizes, activation=nn.ReLU):
+    def __init__(self, latent_size, task_layer_sizes, activation=nn.LeakyReLU):
         super(TaskNetwork, self).__init__()
         self.model = nn.Sequential()
         # self.fc = nn.Linear(latent_size, 1)
@@ -333,17 +377,19 @@ class TaskNetwork(nn.Module):
 
         # self.model.add_module(f"activation_{i+1}", nn.Sigmoid())
 
-        self.criterion = nn.MSELoss()
-        self.optimizer = optim.Adam(self.parameters(), lr=1e-3, maximize=False)
+        self.criterion = nn.MSELoss(reduction='none')
+        self.optimizer = optim.Adam(self.parameters(), lr=1e-2)
 
     def forward(self, x, condition):
         return self.model(torch.cat((x, condition), dim=-1))
 
-    def train_model(self, latent_space, target_value, condition):
+    def train_model(self, latent_space, target_value, condition, normalized_weights):
         self.train()
         self.optimizer.zero_grad()
         task_pred = self.forward(latent_space, condition)
-        loss = self.criterion(task_pred, target_value)
+
+        loss = torch.mean(normalized_weights*self.criterion(task_pred, target_value))
+
         loss.backward()
         self.optimizer.step()
         return loss.item(), task_pred
@@ -352,9 +398,9 @@ class TaskNetwork(nn.Module):
         self.eval()            
         task_pred = self.forward(latent_space, condition)
         # task_loss = self.criterion(torch.tensor([0], device="cuda:0"),task_pred)
-        task_loss = self.criterion(task_pred, target_value)
+        # task_loss = torch.mean(self.criterion(task_pred, target_value))
 
-        # task_loss = -1*task_pred
+        task_loss = -1*task_pred
         # print(task_loss)
         return task_loss, task_pred
 

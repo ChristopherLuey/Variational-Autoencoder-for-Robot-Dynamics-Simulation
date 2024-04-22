@@ -89,7 +89,7 @@ def acquire_new_data(last_control_seq, autoencoder, target_value_tensor, directi
         perturbed_seq = torch.clamp(last_control_seq + perturbation, min=-1, max=1).to(device)
 
         # Evaluate the perturbed sequence without updating the autoencoder weights
-        _prediction, loss, reconstruction_loss, task_loss = autoencoder.evaluate(perturbed_seq, target_value_tensor, direction)
+        _prediction, loss, reconstruction_loss, task_loss, __, __ = autoencoder.evaluate(perturbed_seq, target_value_tensor, direction)
 
         if loss < lowest_loss:
             lowest_loss = loss
@@ -226,6 +226,8 @@ epochs = config['epochs']
 epoch_counter = 0
 xvel = 0
 data_con = np.zeros((epochs,control_sequence_length))
+prev_reward = 0
+
 for epoch in range(epochs):
 
     # if epochs % render_frame == 0:  # Conditional render to reduce computation load
@@ -242,18 +244,18 @@ for epoch in range(epochs):
     
     prediction1, new_control_seq, l = acquire_new_data(new_control_seq, autoencoder, target_value_tensor, direction)
     # __, loss, reconstruction_loss, task_loss = autoencoder.evaluate_gradient(new_control_seq, target_value_tensor, direction)
-    prediction2, loss2, reconstruction_loss, task_loss = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
-    __, loss3, __, __ = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
+    prediction2, loss2, reconstruction_loss, task_loss, __, __ = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
+    __, loss3, __, __, __, __ = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
     new_control_seq = (2 * torch.rand(control_sequence_length) - 1).to(device)
 
-    print("Epoch {}".format(epoch))
-    # print("Epoch {}:\n\tNew Loss:".format(epoch), loss3)
-    # print("\tReconstruction Loss:", reconstruction_loss)
-    # print("\tTask Loss:", task_loss)
-    # print("\tLoss2:", loss2)
-    # print("\tDecoded:", prediction1[0])
-    # print("\tInput:", new_control_seq)
-    # print("\tExpected Reward:", prediction1[1][-1])
+    # print("Epoch {}".format(epoch))
+    print("Epoch {}:\n\tNew Loss:".format(epoch), loss3)
+    print("\tReconstruction Loss:", reconstruction_loss)
+    print("\tTask Loss:", task_loss)
+    print("\tLoss2:", loss2)
+    print("\tDecoded:", prediction1[0])
+    print("\tInput:", new_control_seq)
+    print("\tExpected Reward:", prediction1[1][-1])
 
     total_reward = 0
     _new_control_seq = new_control_seq.view(control_sequence_time, joints)
@@ -268,37 +270,46 @@ for epoch in range(epochs):
             observation, reward, done, info = env.step(action)
             # if args["no_render"] != True:
             # r += (info["x_velocity"] * 2- np.abs(info["y_velocity"]))
-            r += info["x_velocity"]/25
+            # r += info["x_velocity"]/25
             xvel += info["x_velocity"]/25
-            # r += ((info["x_velocity"] ** 2 + info["y_velocity"] ** 2) ** (1/2))/50
+            r += ((info["x_velocity"] ** 2 + info["y_velocity"] ** 2) ** (1/2))/50
             env.render()
 
         total_reward += r
     # print("\tReward {} {}".format(total_reward, xvel))
 
-    # if (total_reward < 0.1) or (total_reward > 0.12):
-    #     observation = env.reset()
-    #     print("\tTry Again")
-    #     continue
-    # _total_reward = total_reward
+
 
     # if total_reward<0:
     #     total_reward = 0
     # else:
     #     total_reward = 1
 
+    if done:
+        observation = env.reset()
+        for i in range(10):
+            env.step(clear)
+        continue
+
+    total_reward = info["x_position"] - prev_reward
+    prev_reward = info["x_position"]
+    if not (total_reward > 0.2 and total_reward < 0.25):
+        observation = env.reset()
+        print("\tTry Again")
+        continue
+    _total_reward = total_reward
     expected_reward_list.append(prediction1[1][-1].item())
     epoch_counter += 1
     x,y,z,w = observation[1:5]
     dir = math.atan2(2.0 * (w * x + y * z), 1 - 2 * (x**2 + z**2))/(2*math.pi)
     # direction_task.fill_(dir)
-    # dir=0
+    dir=0
     direction.fill_(dir)
     # direction.fill_(total_reward)
 
     # direction_list.append(dir - direction_prev[0])
     # direction_list.append(dir)
-    direction_list.append(_total_reward)
+    direction_list.append(total_reward)
 
 
     direction_prev.fill_(dir)
@@ -338,9 +349,9 @@ for epoch in range(epochs):
     # print(combined_direction.shape)
     # print(combined_target_value_tensor.shape)
 
-    for __ in range(50):
+    for __ in range(1):
         loss = autoencoder.train_model(_combined_control_seq[1:], _combined_target_value_tensor[1:], _combined_direction[1:], combined_latent_space[1:])
-    # loss = autoencoder.train_model(new_control_seq, target_value_tensor, direction)
+        # loss = autoencoder.train_model(new_control_seq, target_value_tensor, direction,combined_latent_space[1:])
 
     # ep = _
     # data_con[ep,:] = new_control_seq.cpu().numpy()
@@ -361,7 +372,8 @@ for epoch in range(epochs):
     # print("\tTask Loss from Training:", loss[1])
     # print("\tCombined Loss:", loss[2])
 
-    losses.append(loss[0])
+    # losses.append(loss[0])
+    losses.append(l)
     obj_loss.append(loss[1])
     encoded_list.append(loss[5][-1].to("cpu").tolist())
     # encoded_list.append(loss[5].to("cpu").tolist())
@@ -372,13 +384,14 @@ for epoch in range(epochs):
     # for i in range(5):
     #     observation, reward, done, info = env.step(clear)
     #     env.render()
-    observation = env.reset()
+    # observation = env.reset()
   
 
     # Check if the episode is done
     if done:
         observation = env.reset()
-        env.step(clear)
+        for i in range(10):
+            env.step(clear)
 
 env.close()
 
