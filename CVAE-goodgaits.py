@@ -155,7 +155,7 @@ while True:
                 loss = autoencoder.train_model(combined_control_seq_batch, combined_target_value_tensor, combined_direction, combined_latent_space[-1])
 
             #loss = autoencoder.train_model(train_set, train_set_target, train_set_direction, combined_latent_space[-1])
-            (decoded, task_pred), combined_loss, reconstruction_loss, task_loss, mean, log_variation = autoencoder.evaluate(test_new_control_seq, test_target_value_tensor, test_direction)
+            (decoded, task_pred), combined_loss, reconstruction_loss, task,  _loss, mean, log_variation = autoencoder.evaluate(test_new_control_seq, test_target_value_tensor, test_direction)
             losses[0].append(reconstruction_loss)
             obj_loss[0].append(loss[1])
             # encoded_list.append(loss[3].to("cpu").tolist())
