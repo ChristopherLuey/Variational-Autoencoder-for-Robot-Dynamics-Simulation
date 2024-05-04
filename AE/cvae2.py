@@ -4,7 +4,6 @@ import torch.optim as optim
 import numpy as np
 import yaml
 
-# from torchviz import make_dot
 class ContrastiveCVAEEncoder(nn.Module):
     def __init__(self, layer_sizes, latent_space, activation=nn.ReLU):
         super(ContrastiveCVAEEncoder, self).__init__()
@@ -76,10 +75,22 @@ class ContrastiveBasicAutoencoder(nn.Module):
         KLD = -0.0 * torch.sum(1+ log_variation - mean.pow(2) - log_variation.exp())
         return reproduction_loss + KLD
 
-    def train_model(self, input_batch, condition, weights):
+    def train_model(self, input_batch1, input_batch2, condition1, condition2, weights):
         self.train()
-        decoded, latent_representation, mean, log_variation= self.forward(input_batch, condition)
-        loss = self.loss_function(input_batch, decoded, mean, log_variation, weights)
+        decoded1, latent_representation1, mean1, log_variation1= self.forward(input_batch1, condition1)
+        decoded2, latent_representation2, mean2, log_variation2= self.forward(input_batch2, condition2)
+
+        reconstruction1 = self.criterion(decoded1,input_batch1)
+        reconstruction2 = self.criterion(decoded2,input_batch2)
+
+        margin = 1.0
+
+        euclidean_distance = F.pairwise_distance(latent_representation1, latent_representation2)
+        contrastive = torch.mean((1 - label) * torch.pow(euclidean_distance, 2) +
+                                      (label) * torch.pow(torch.clamp(margin - euclidean_distance, min=0.0), 2))
+
+        #loss = self.loss_function(input_batch, decoded, mean, log_variation, weights)
+        loss = reconstruction1 + reconstruction2 + contrastive
         self.optimizer.zero_grad()
         loss.backward(retain_graph=True)
         self.optimizer.step()
@@ -196,7 +207,7 @@ class ContrastiveAugmentedConditionalVariationalAutoencoder(nn.Module):
     #     self.last_loss = combined_loss.item()
     #     return (reconstruction_loss, task_loss, reconstruction_loss+task_loss, latent_representation, decoded, mean, log_variation)
 
-    def train_model(self,input_batch, target_value, condition, _latent_representation, iter=1):
+    def train_model(self,input_batch1, input_batch2, target_value1, target_value2, condition1, condition2, _latent_representation, iter=1):
         for layer in self.children():
             if hasattr(layer, 'reset_parameters'):
                 layer.reset_parameters()
@@ -237,12 +248,12 @@ class ContrastiveAugmentedConditionalVariationalAutoencoder(nn.Module):
         # else:
         #     normalized_weights = torch.divide(target_value, target_value)
 
-
         for i in range(iter):
+
             self.train()
             #zeros_direction = torch.zeros(input_batch.size(0), 1, dtype=input_batch.dtype, device=input_batch.device)
 
-            reconstruction_loss, decoded, latent_representation, mean, log_variation = self.autoencoder.train_model(input_batch, condition, normalized_weights)
+            reconstruction_loss, decoded, latent_representation, mean, log_variation = self.autoencoder.train_model(input_batch1, input_batch2, condition1, condition2)
             #
             if _latent_representation.shape[0] == 0:
                 _latent_representation = latent_representation
