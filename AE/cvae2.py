@@ -75,7 +75,7 @@ class ContrastiveBasicAutoencoder(nn.Module):
         KLD = -0.0 * torch.sum(1+ log_variation - mean.pow(2) - log_variation.exp())
         return reproduction_loss + KLD
 
-    def train_model(self, input_batch1, input_batch2, condition1, condition2, weights):
+    def train_model(self, input_batch1, input_batch2, condition1, condition2, target1, target2):
         self.train()
         decoded1, latent_representation1, mean1, log_variation1= self.forward(input_batch1, condition1)
         decoded2, latent_representation2, mean2, log_variation2= self.forward(input_batch2, condition2)
@@ -84,17 +84,20 @@ class ContrastiveBasicAutoencoder(nn.Module):
         reconstruction2 = self.criterion(decoded2,input_batch2)
 
         margin = 1.0
+        reward_similarity = torch.abs(target1 - target2)
+        threshold = 0.1
+        labels = (reward_similarity < threshold).float()
 
         euclidean_distance = F.pairwise_distance(latent_representation1, latent_representation2)
-        contrastive = torch.mean((1 - label) * torch.pow(euclidean_distance, 2) +
-                                      (label) * torch.pow(torch.clamp(margin - euclidean_distance, min=0.0), 2))
+        contrastive = torch.mean((1 - labels) * torch.pow(euclidean_distance, 2) +
+                                      (labels) * torch.pow(torch.clamp(margin - euclidean_distance, min=0.0), 2))
 
         #loss = self.loss_function(input_batch, decoded, mean, log_variation, weights)
         loss = reconstruction1 + reconstruction2 + contrastive
         self.optimizer.zero_grad()
         loss.backward(retain_graph=True)
         self.optimizer.step()
-        return loss.item(), decoded, latent_representation, mean, log_variation
+        return loss.item(), decoded1, latent_representation1, mean1, log_variation1
 
     def evaluate(self,input_batch, condition):
         self.eval()
@@ -147,7 +150,7 @@ class ContrastiveAugmentedConditionalVariationalAutoencoder(nn.Module):
 
     def forward(self, x, condition, evaluating):
         decoded, latent_representation, mean, log_variation = self.autoencoder(x, condition)
-        task_pred = self.task_network(latent_representation)
+        task_pred = self.task_network(latent_representation, condition)
         return decoded, task_pred, latent_representation, mean, log_variation
 
     # def train_model(self, input_batch, target_value, condition, _latent_representation):
@@ -235,13 +238,13 @@ class ContrastiveAugmentedConditionalVariationalAutoencoder(nn.Module):
         # input_batch_negative = input_batch[negative_indices]
         # condition_negative = condition[negative_indices]
 
-        weights_clamped = torch.clamp(target_value, min=0, max=1)
-        # weights_clamped = target_value
-        max_weight = weights_clamped.max()
-        if max_weight > 0:
-            normalized_weights = weights_clamped / max_weight
-        else:
-            normalized_weights = weights_clamped
+        # weights_clamped = torch.clamp(target_value, min=0, max=1)
+        # # weights_clamped = target_value
+        # max_weight = weights_clamped.max()
+        # if max_weight > 0:
+        #     normalized_weights = weights_clamped / max_weight
+        # else:
+        #     normalized_weights = weights_clamped
 
         # if target_value < 0:
         #     normalized_weights = -torch.divide(target_value, target_value)
@@ -253,7 +256,7 @@ class ContrastiveAugmentedConditionalVariationalAutoencoder(nn.Module):
             self.train()
             #zeros_direction = torch.zeros(input_batch.size(0), 1, dtype=input_batch.dtype, device=input_batch.device)
 
-            reconstruction_loss, decoded, latent_representation, mean, log_variation = self.autoencoder.train_model(input_batch1, input_batch2, condition1, condition2)
+            reconstruction_loss, decoded, latent_representation, mean, log_variation = self.autoencoder.train_model(input_batch1, input_batch2, condition1, condition2, target_value1, target_value2)
             #
             if _latent_representation.shape[0] == 0:
                 _latent_representation = latent_representation
@@ -262,7 +265,7 @@ class ContrastiveAugmentedConditionalVariationalAutoencoder(nn.Module):
 
             # task_loss, task_pred = self.task_network.train_model(_latent_representation.clone().detach(), target_value, condition)
             # task_loss = 0
-            task_loss, task_pred = self.task_network.train_model(mean.clone().detach(), target_value, condition.clone().detach(), normalized_weights)
+            task_loss, task_pred = self.task_network.train_model(mean.clone().detach(), target_value, condition.clone().detach(), 1)
 
         self.training_epochs+=1
 
@@ -399,6 +402,7 @@ class ContrastiveTaskNetwork(nn.Module):
         task_pred = self.forward(latent_space, condition)
 
         loss = torch.mean(normalized_weights*self.criterion(task_pred, target_value))
+        loss = torch.mean(self.criterion(task_pred, target_value))
 
         loss.backward()
         self.optimizer.step()

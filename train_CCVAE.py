@@ -291,12 +291,13 @@ for epoch in range(epochs):
             env.step(clear)
         continue
 
-    total_reward = info["x_position"] - prev_reward
+    # total_reward = info["x_position"] - prev_reward
+    total_reward = info["x_position"]
     prev_reward = info["x_position"]
-    if not (total_reward > 0.2 and total_reward < 0.25):
-        observation = env.reset()
-        print("\tTry Again")
-        continue
+    # if not (total_reward > 0.2 and total_reward < 0.25):
+    #     observation = env.reset()
+    #     print("\tTry Again")
+    #     continue
     _total_reward = total_reward
     expected_reward_list.append(prediction1[1][-1].item())
     epoch_counter += 1
@@ -337,10 +338,10 @@ for epoch in range(epochs):
         _combined_direction = combined_direction.clone()
         _combined_target_value_tensor = combined_target_value_tensor.clone()
 
-    if _combined_target_value_tensor.shape[0] < 5:
-        _combined_target_value_tensor = smooth_tensor(_combined_target_value_tensor, 3).to(device)
-    else:
-        _combined_target_value_tensor = smooth_tensor(_combined_target_value_tensor, 5).to(device)
+    # if _combined_target_value_tensor.shape[0] < 5:
+    #     _combined_target_value_tensor = smooth_tensor(_combined_target_value_tensor, 3).to(device)
+    # else:
+    #     _combined_target_value_tensor = smooth_tensor(_combined_target_value_tensor, 5).to(device)
 
     task_reward_list.append(_combined_target_value_tensor[-1].item())
 
@@ -349,8 +350,18 @@ for epoch in range(epochs):
     # print(combined_direction.shape)
     # print(combined_target_value_tensor.shape)
 
+    input_batch1 = _combined_control_seq[1:]
+    target_value1 = _combined_target_value_tensor[1:]
+    condition1 = _combined_direction[1:]
+
+    shuffle_indices = torch.randperm(input_batch1.size(0))
+    # Apply the indices to shuffle the batches
+    input_batch2 = input_batch1[shuffle_indices]
+    target_value2 = target_value1[shuffle_indices]
+    condition2 = condition1[shuffle_indices]
+
     for __ in range(1):
-        loss = autoencoder.train_model(_combined_control_seq[1:], _combined_target_value_tensor[1:], _combined_direction[1:], combined_latent_space[1:])
+        loss = autoencoder.train_model(input_batch1, input_batch2, target_value1, target_value2, condition1, condition2, combined_latent_space[1:])
         # loss = autoencoder.train_model(new_control_seq, target_value_tensor, direction,combined_latent_space[1:])
 
     # ep = _
