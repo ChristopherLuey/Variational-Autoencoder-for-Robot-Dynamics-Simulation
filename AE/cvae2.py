@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
 import numpy as np
 import yaml
 
@@ -75,29 +76,42 @@ class ContrastiveBasicAutoencoder(nn.Module):
         KLD = -0.0 * torch.sum(1+ log_variation - mean.pow(2) - log_variation.exp())
         return reproduction_loss + KLD
 
-    def train_model(self, input_batch1, input_batch2, condition1, condition2, target1, target2):
+    def train_model(self, input_batch1, input_batch2, condition1, condition2, target1, target2, clip_value=1.0):
         self.train()
-        decoded1, latent_representation1, mean1, log_variation1= self.forward(input_batch1, condition1)
-        decoded2, latent_representation2, mean2, log_variation2= self.forward(input_batch2, condition2)
+        decoded1, latent_representation1, mean1, log_variation1 = self.forward(input_batch1, condition1)
+        decoded2, latent_representation2, mean2, log_variation2 = self.forward(input_batch2, condition2)
 
-        reconstruction1 = self.criterion(decoded1,input_batch1)
-        reconstruction2 = self.criterion(decoded2,input_batch2)
+        reconstruction1 = torch.mean(self.criterion(decoded1, input_batch1), dim=1)
+        reconstruction2 = torch.mean(self.criterion(decoded2, input_batch2), dim=1)
 
-        margin = 1.0
-        reward_similarity = torch.abs(target1 - target2)
-        threshold = 0.1
-        labels = (reward_similarity < threshold).float()
+        # Compute the absolute difference between targets as a measure of dissimilarity
+        target_distance = torch.abs(target1 - target2)
+        # Normalize the target distance for numerical stability
+        target_distance_normalized = target_distance / (target_distance.max() + 1e-8)
 
+        # Compute Euclidean distance between latent representations
         euclidean_distance = F.pairwise_distance(latent_representation1, latent_representation2)
-        contrastive = torch.mean((1 - labels) * torch.pow(euclidean_distance, 2) +
-                                      (labels) * torch.pow(torch.clamp(margin - euclidean_distance, min=0.0), 2))
 
-        #loss = self.loss_function(input_batch, decoded, mean, log_variation, weights)
-        loss = reconstruction1 + reconstruction2 + contrastive
+        # Contrastive loss
+        margin = 1.0
+        contrastive_loss = target_distance_normalized * torch.pow(euclidean_distance, 2) + (
+                    1 - target_distance_normalized) * torch.pow(torch.clamp(margin - euclidean_distance, min=0.0), 2)
+        total_contrastive_loss = torch.mean(contrastive_loss)
+
+        if total_contrastive_loss < 0:
+            print("NEGATIVE\nNEGATIVE")
+
+        # Combine reconstruction loss and contrastive loss
+        total_loss = torch.mean(reconstruction1) + torch.mean(reconstruction2) + total_contrastive_loss
+
         self.optimizer.zero_grad()
-        loss.backward(retain_graph=True)
+        total_loss.backward()
+
+        # Gradient clipping
+        torch.nn.utils.clip_grad_norm_(self.parameters(), clip_value)
+
         self.optimizer.step()
-        return loss.item(), decoded1, latent_representation1, mean1, log_variation1
+        return total_contrastive_loss.item(), decoded1, latent_representation1, mean1, log_variation1
 
     def evaluate(self,input_batch, condition):
         self.eval()
@@ -131,7 +145,7 @@ class ContrastiveAugmentedConditionalVariationalAutoencoder(nn.Module):
         self.optimizer_autoencoder = optim.Adam(self.autoencoder.parameters(), lr=self.learning_rate)
         self.optimizer_task_network = optim.Adam(self.task_network.parameters(), lr=1e-2)
         self.reconstruction_weight = [0.8, 1]
-        self.task_weight = [0.2,0]
+        self.task_weight = [0.2,1]
 
         self.direction = torch.tensor([0.0], dtype=torch.float32, device="cuda:0")
         self.training_epochs = 0
@@ -211,19 +225,19 @@ class ContrastiveAugmentedConditionalVariationalAutoencoder(nn.Module):
     #     return (reconstruction_loss, task_loss, reconstruction_loss+task_loss, latent_representation, decoded, mean, log_variation)
 
     def train_model(self,input_batch1, input_batch2, target_value1, target_value2, condition1, condition2, _latent_representation, iter=1):
-        for layer in self.children():
-            if hasattr(layer, 'reset_parameters'):
-                layer.reset_parameters()
-        for layer in self.task_network.children():
-            if hasattr(layer, 'reset_parameters'):
-                layer.reset_parameters()
-
-        for layer in self.autoencoder.encoder.children():
-            if hasattr(layer, 'reset_parameters'):
-                layer.reset_parameters()
-        for layer in self.autoencoder.decoder.children():
-            if hasattr(layer, 'reset_parameters'):
-                layer.reset_parameters()
+        # for layer in self.children():
+        #     if hasattr(layer, 'reset_parameters'):
+        #         layer.reset_parameters()
+        # for layer in self.task_network.children():
+        #     if hasattr(layer, 'reset_parameters'):
+        #         layer.reset_parameters()
+        #
+        # for layer in self.autoencoder.encoder.children():
+        #     if hasattr(layer, 'reset_parameters'):
+        #         layer.reset_parameters()
+        # for layer in self.autoencoder.decoder.children():
+        #     if hasattr(layer, 'reset_parameters'):
+        #         layer.reset_parameters()
 
         # # Find indices where target_value is greater than 0
         # positive_indices = target_value > 0
@@ -238,13 +252,13 @@ class ContrastiveAugmentedConditionalVariationalAutoencoder(nn.Module):
         # input_batch_negative = input_batch[negative_indices]
         # condition_negative = condition[negative_indices]
 
-        # weights_clamped = torch.clamp(target_value, min=0, max=1)
-        # # weights_clamped = target_value
-        # max_weight = weights_clamped.max()
-        # if max_weight > 0:
-        #     normalized_weights = weights_clamped / max_weight
-        # else:
-        #     normalized_weights = weights_clamped
+        weights_clamped = torch.clamp(target_value1, min=0)
+        # weights_clamped = target_value
+        max_weight = weights_clamped.max()
+        if max_weight > 0:
+            normalized_weights = weights_clamped / max_weight
+        else:
+            normalized_weights = weights_clamped
 
         # if target_value < 0:
         #     normalized_weights = -torch.divide(target_value, target_value)
@@ -265,7 +279,7 @@ class ContrastiveAugmentedConditionalVariationalAutoencoder(nn.Module):
 
             # task_loss, task_pred = self.task_network.train_model(_latent_representation.clone().detach(), target_value, condition)
             # task_loss = 0
-            task_loss, task_pred = self.task_network.train_model(mean.clone().detach(), target_value, condition.clone().detach(), 1)
+            task_loss, task_pred = self.task_network.train_model(latent_representation.clone().detach(), target_value1, condition1.clone().detach(), normalized_weights)
 
         self.training_epochs+=1
 
@@ -401,7 +415,7 @@ class ContrastiveTaskNetwork(nn.Module):
         self.optimizer.zero_grad()
         task_pred = self.forward(latent_space, condition)
 
-        loss = torch.mean(normalized_weights*self.criterion(task_pred, target_value))
+        # loss = torch.mean(normalized_weights*self.criterion(task_pred, target_value))
         loss = torch.mean(self.criterion(task_pred, target_value))
 
         loss.backward()

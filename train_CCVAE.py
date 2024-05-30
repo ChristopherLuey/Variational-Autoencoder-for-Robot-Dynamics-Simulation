@@ -31,7 +31,7 @@ env = gym.make('CustomAnt-v3', terminate_when_unhealthy=True, healthy_z_range=(0
 observation = env.reset()
 joints = config["joints"]
 
-from AE.cvae import AugmentedConditionalVariationalAutoencoder
+from AE.cvae2 import ContrastiveAugmentedConditionalVariationalAutoencoder
 
 model_kwargs = {'input_size': config['input_size']*joints, 
                     'latent_size': config['latent_size'],
@@ -40,7 +40,7 @@ model_kwargs = {'input_size': config['input_size']*joints,
                     'task_layer_sizes': config["task_layer_sizes"],
                     'condition_size': config["condition_size"]}
 
-autoencoder = AugmentedConditionalVariationalAutoencoder(**model_kwargs).to(device)
+autoencoder = ContrastiveAugmentedConditionalVariationalAutoencoder(**model_kwargs).to(device)
 samples = config["samples"]
 perturbation_strength = config["perturbation_strength"]
 control_sequence_time = config["input_size"]
@@ -246,7 +246,7 @@ for epoch in range(epochs):
     # __, loss, reconstruction_loss, task_loss = autoencoder.evaluate_gradient(new_control_seq, target_value_tensor, direction)
     prediction2, loss2, reconstruction_loss, task_loss, __, __ = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
     __, loss3, __, __, __, __ = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
-    new_control_seq = (2 * torch.rand(control_sequence_length) - 1).to(device)
+    #new_control_seq = (2 * torch.rand(control_sequence_length) - 1).to(device)
 
     # print("Epoch {}".format(epoch))
     print("Epoch {}:\n\tNew Loss:".format(epoch), loss3)
@@ -271,8 +271,9 @@ for epoch in range(epochs):
             # if args["no_render"] != True:
             # r += (info["x_velocity"] * 2- np.abs(info["y_velocity"]))
             # r += info["x_velocity"]/25
-            xvel += info["x_velocity"]/25
-            r += ((info["x_velocity"] ** 2 + info["y_velocity"] ** 2) ** (1/2))/50
+            xvel += info["x_velocity"]/50
+            r+=xvel
+            #r += ((info["x_velocity"] ** 2 + info["y_velocity"] ** 2) ** (1/2))/50
             env.render()
 
         total_reward += r
@@ -291,20 +292,24 @@ for epoch in range(epochs):
             env.step(clear)
         continue
 
-    # total_reward = info["x_position"] - prev_reward
-    total_reward = info["x_position"]
+    total_reward = info["x_position"] - prev_reward
+    #total_reward = info["x_position"]
     prev_reward = info["x_position"]
     # if not (total_reward > 0.2 and total_reward < 0.25):
     #     observation = env.reset()
     #     print("\tTry Again")
     #     continue
     _total_reward = total_reward
+    # _total_reward =
+
+    print("\tReal Reward:", total_reward)
+
     expected_reward_list.append(prediction1[1][-1].item())
     epoch_counter += 1
     x,y,z,w = observation[1:5]
     dir = math.atan2(2.0 * (w * x + y * z), 1 - 2 * (x**2 + z**2))/(2*math.pi)
     # direction_task.fill_(dir)
-    dir=0
+    #dir=info["x_position"]
     direction.fill_(dir)
     # direction.fill_(total_reward)
 
@@ -360,10 +365,14 @@ for epoch in range(epochs):
     target_value2 = target_value1[shuffle_indices]
     condition2 = condition1[shuffle_indices]
 
-    for __ in range(1):
+    for __ in range(10):
         loss = autoencoder.train_model(input_batch1, input_batch2, target_value1, target_value2, condition1, condition2, combined_latent_space[1:])
         # loss = autoencoder.train_model(new_control_seq, target_value_tensor, direction,combined_latent_space[1:])
-
+        shuffle_indices = torch.randperm(input_batch1.size(0))
+        # Apply the indices to shuffle the batches
+        input_batch2 = input_batch1[shuffle_indices]
+        target_value2 = target_value1[shuffle_indices]
+        condition2 = condition1[shuffle_indices]
     # ep = _
     # data_con[ep,:] = new_control_seq.cpu().numpy()
     # # print(data_con.shape, len(task_reward_list), len(direction_list))
@@ -384,11 +393,17 @@ for epoch in range(epochs):
     # print("\tCombined Loss:", loss[2])
 
     # losses.append(loss[0])
+    decoded, combined_loss, reconstruction_loss, task_loss, mean, log_variation = autoencoder.evaluate(new_control_seq, target_value_tensor, direction)
     losses.append(l)
     obj_loss.append(loss[1])
     encoded_list.append(loss[5][-1].to("cpu").tolist())
     # encoded_list.append(loss[5].to("cpu").tolist())
-    decoded_list.append(loss[4].to("cpu").tolist())
+    #print(loss[4].to("cpu").tolist())
+    #decoded_list.append([loss[4].to("cpu").tolist()[-1]])
+
+    print(decoded[0])
+    decoded_list.append(decoded[0].to("cpu"))
+
     new_control_seq_values.append(new_control_seq.to("cpu").tolist()) 
     variation_list.append(loss[6][-1])
 
