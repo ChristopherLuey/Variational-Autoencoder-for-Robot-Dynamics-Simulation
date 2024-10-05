@@ -35,8 +35,10 @@ def evaluate_control_sequence(control_sequence, env, joints, substeps=10, seed=N
     
     total_velocity_x, total_velocity_y = 0, 0
     total_reward = 0
-    positions = []
-    velocities = []
+    positions_x = []
+    positions_y = []
+    velocities_x = []
+    velocities_y = []
     directions = []
     rewards = []
 
@@ -55,19 +57,19 @@ def evaluate_control_sequence(control_sequence, env, joints, substeps=10, seed=N
 
         for interpolated_action in interpolated_actions:
             observation, reward, done, info = env.step(interpolated_action)
-            current_position = {'x': info["x_position"], 'y': info["y_position"]}
-            current_velocity = {'x': info["x_velocity"], 'y': info["y_velocity"]}
             current_direction = math.atan2(2.0 * (observation[3] * observation[0] + observation[1] * observation[2]), 1 - 2 * (observation[0] ** 2 + observation[2] ** 2)) / (2 * math.pi)
 
             # Record positions, velocities, directions, and rewards over time
-            positions.append(current_position)
-            velocities.append(current_velocity)
+            positions_x.append(info["x_position"])
+            positions_y.append(info["y_position"])
+            velocities_x.append(info["x_velocity"])
+            velocities_y.append(info["y_velocity"])
             directions.append(current_direction)
             rewards.append(reward)
 
             # Update total velocity and reward
-            total_velocity_x += current_velocity['x']
-            total_velocity_y += current_velocity['y']
+            total_velocity_x += info["x_velocity"]
+            total_velocity_y += info["y_velocity"]
             total_reward += reward
 
             if done:
@@ -91,10 +93,10 @@ def evaluate_control_sequence(control_sequence, env, joints, substeps=10, seed=N
         "final_x_velocity": total_velocity_x,
         "final_y_velocity": total_velocity_y,
         "direction": current_direction,
-        "x_positions_over_time": [pos['x'] for pos in positions],
-        "y_positions_over_time": [pos['y'] for pos in positions],
-        "x_positions_over_time": [vel['x'] for vel in velocities],
-        "y_positions_over_time": [vel['x'] for vel in velocities],
+        "x_positions_over_time": positions_x,
+        "y_positions_over_time": positions_y,
+        "x_positions_over_time": velocities_x,
+        "y_positions_over_time": velocities_y,
         "directions_over_time": directions,
         "rewards_over_time": rewards
     }
