@@ -20,11 +20,7 @@ def evaluate_control_sequence(control_sequence, env, joints, substeps=10, seed=N
     Returns:
     - dict: A dictionary containing metrics such as final position, velocity, direction, positions over time, velocities over time, directions over time, and rewards over time.
     """
-    if hasattr(env, 'reset'):  # Check if the environment supports seeding directly
-        env.reset(seed=seed)
-    else:
-        print("Warning: Environment does not support seeding in reset method.")
-        env.reset()
+    env.reset()
     
     if control_sequence.numel() % joints != 0:
         raise ValueError("Control sequence length must be divisible by the number of joints.")
@@ -47,7 +43,6 @@ def evaluate_control_sequence(control_sequence, env, joints, substeps=10, seed=N
     interpolated_actions = []
 
     for action in control_sequence.cpu().numpy():
-        action = control_sequence[i].cpu().numpy()
 
         # Vectorize the interpolation step for efficiency
         if previous_action is not None:
@@ -77,7 +72,7 @@ def evaluate_control_sequence(control_sequence, env, joints, substeps=10, seed=N
                 break
 
         if done:
-                break
+            break
 
         previous_action = action  # Update the previous action
 
@@ -95,13 +90,63 @@ def evaluate_control_sequence(control_sequence, env, joints, substeps=10, seed=N
         "direction": current_direction,
         "x_positions_over_time": positions_x,
         "y_positions_over_time": positions_y,
-        "x_positions_over_time": velocities_x,
-        "y_positions_over_time": velocities_y,
+        "x_velocities_over_time": velocities_x,  # Corrected key
+        "y_velocities_over_time": velocities_y,  # Corrected key
         "directions_over_time": directions,
         "rewards_over_time": rewards
     }
     
     return final_info
+
+
+def query_sequences_near_position(x_target=0.1, y_target=0, x_tolerance=0.05, y_tolerance=0.05):
+    """
+    Query the SQLite database to find sequences where the final position is around the given x and y values.
+
+    Parameters:
+    - x_target (float): Target x position.
+    - y_target (float): Target y position.
+    - x_tolerance (float): Allowed tolerance for x position.
+    - y_tolerance (float): Allowed tolerance for y position.
+
+    Returns:
+    - list: A list of dictionaries containing the sequences that meet the position criteria.
+    """
+    with sqlite3.connect('control_sequences.db') as conn:
+        cursor = conn.cursor()
+        query = '''
+        SELECT * FROM control_sequences
+        WHERE final_x_position BETWEEN ? AND ?
+        AND final_y_position BETWEEN ? AND ?
+        '''
+        cursor.execute(query, (
+            x_target - x_tolerance, x_target + x_tolerance,
+            y_target - y_tolerance, y_target + y_tolerance
+        ))
+        rows = cursor.fetchall()
+        results = []
+        for row in rows:
+            results.append({
+                "id": row[0],
+                "seed": row[1],
+                "temporal_resolution": row[2],
+                "temporal_substeps": row[3],
+                "temporal_run": row[4],
+                "joints": row[5],
+                "control": json.loads(row[6]),
+                "final_x_position": row[7],
+                "final_y_position": row[8],
+                "final_x_velocity": row[9],
+                "final_y_velocity": row[10],
+                "direction": row[11],
+                "x_positions_over_time": json.loads(row[12]),
+                "y_positions_over_time": json.loads(row[13]),
+                "x_velocities_over_time": json.loads(row[14]),
+                "y_velocities_over_time": json.loads(row[15]),
+                "directions_over_time": json.loads(row[16]),
+                "rewards_over_time": json.loads(row[17])
+            })
+        return results
 
 
 def query_database(column, value):
@@ -130,13 +175,17 @@ def query_database(column, value):
                 "temporal_run": row[4],
                 "joints": row[5],
                 "control": json.loads(row[6]),
-                "final_position": row[7],
-                "total_velocity": row[8],
-                "direction": row[9],
-                "positions_over_time": json.loads(row[10]),
-                "velocities_over_time": json.loads(row[11]),
-                "directions_over_time": json.loads(row[12]),
-                "rewards_over_time": json.loads(row[13])
+                "final_x_position": row[7],
+                "final_y_position": row[8],
+                "final_x_velocity": row[9],
+                "final_y_velocity": row[10],
+                "direction": row[11],
+                "x_positions_over_time": json.loads(row[12]),
+                "y_positions_over_time": json.loads(row[13]),
+                "x_velocities_over_time": json.loads(row[14]),  # Corrected key
+                "y_velocities_over_time": json.loads(row[15]),  # Corrected key
+                "directions_over_time": json.loads(row[16]),
+                "rewards_over_time": json.loads(row[17])
             })
         return results
 
@@ -153,7 +202,10 @@ if __name__ == "__main__":
     conn = sqlite3.connect('control_sequences.db')
     cursor = conn.cursor()
 
-    # Create table if it doesn't exist
+    # Drop the existing table (WARNING: This will delete all existing data in the table)
+    cursor.execute('DROP TABLE IF EXISTS control_sequences')
+
+    # Create table with the updated schema
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS control_sequences (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -163,11 +215,15 @@ if __name__ == "__main__":
             temporal_run TEXT,
             joints INTEGER,
             control TEXT,
-            final_position REAL,
-            total_velocity REAL,
+            final_x_position REAL,
+            final_y_position REAL,
+            final_x_velocity REAL,
+            final_y_velocity REAL,
             direction REAL,
-            positions_over_time TEXT,
-            velocities_over_time TEXT,
+            x_positions_over_time TEXT,
+            y_positions_over_time TEXT,
+            x_velocities_over_time TEXT,
+            y_velocities_over_time TEXT,
             directions_over_time TEXT,
             rewards_over_time TEXT
         )
@@ -182,20 +238,24 @@ if __name__ == "__main__":
 
         # Insert into SQL database
         cursor.execute('''
-            INSERT INTO control_sequences (seed, temporal_resolution, temporal_substeps, temporal_run, joints, control, final_position, total_velocity, direction, positions_over_time, velocities_over_time, directions_over_time, rewards_over_time)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO control_sequences (seed, temporal_resolution, temporal_substeps, temporal_run, joints, control, final_x_position, final_y_position, final_x_velocity, final_y_velocity, direction, x_positions_over_time, y_positions_over_time, x_velocities_over_time, y_velocities_over_time, directions_over_time, rewards_over_time)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             final_info['seed'],
             final_info['temporal_resolution'],
             final_info['temporal_substeps'],
             final_info['temporal_run'],
             final_info['joints'],
-            json.dumps(control_sequence.view(-1, joints).cpu().tolist()),
-            final_info['final_position'],
-            final_info['total_velocity'],
+            json.dumps(final_info['control']),
+            final_info['final_x_position'],
+            final_info['final_y_position'],
+            final_info['final_x_velocity'],
+            final_info['final_y_velocity'],
             final_info['direction'],
-            json.dumps(final_info['positions_over_time']),
-            json.dumps(final_info['velocities_over_time']),
+            json.dumps(final_info['x_positions_over_time']),
+            json.dumps(final_info['y_positions_over_time']),
+            json.dumps(final_info['x_velocities_over_time']),
+            json.dumps(final_info['y_velocities_over_time']),
             json.dumps(final_info['directions_over_time']),
             json.dumps(final_info['rewards_over_time'])
         ))
@@ -210,8 +270,3 @@ if __name__ == "__main__":
     # Close the environment and database connection
     env.close()
     conn.close()
-
-    # Example query to retrieve data based on a specific column value
-    results = query_database("seed", 42)
-    for result in results:
-        print(result)
