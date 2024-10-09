@@ -37,9 +37,9 @@ def arg_parse():
     return args
 
 
-def configuration(args):
+def configuration(args, config_type):
     # load config
-    config_path = f'./config/AE.yaml'
+    config_path = config_type
 
     with open(config_path, 'r') as f:
         config_dict = yaml.safe_load(f)

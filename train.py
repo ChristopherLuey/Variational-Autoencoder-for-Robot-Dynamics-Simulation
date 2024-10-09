@@ -8,7 +8,7 @@ from generate_data import *
 # export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$HOME/.mujoco/mujoco200/bin
 
 args = arg_parse()
-config = configuration(args)
+config = configuration(args, 'config/AE.yaml')
 device = check_gpu(args)
 env = gym.make('CustomAnt-v3', terminate_when_unhealthy=True, healthy_z_range=(0.3,5), ctrl_cost_weight=0, contact_cost_weight=0, healthy_reward=0)
 observation = env.reset()
