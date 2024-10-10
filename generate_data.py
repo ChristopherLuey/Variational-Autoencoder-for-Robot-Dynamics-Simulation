@@ -208,27 +208,28 @@ def query_sequences_near_position(x_target=0.1, y_target=0, x_tolerance=0.05, y_
         rows = cursor.fetchall()
         results = []
         for row in rows:
-            results.append({
-                "id": row[0],
-                "seed": row[1],
-                "temporal_resolution": row[2],
-                "temporal_substeps": row[3],
-                "temporal_run": row[4],
-                "joints": row[5],
-                "control": json.loads(row[6]),
-                "final_x_position": row[7],
-                "final_y_position": row[8],
-                "final_x_velocity": row[9],
-                "final_y_velocity": row[10],
-                "direction": row[11],
-                "x_positions_over_time": json.loads(row[12]),
-                "y_positions_over_time": json.loads(row[13]),
-                "x_velocities_over_time": json.loads(row[14]),
-                "y_velocities_over_time": json.loads(row[15]),
-                "directions_over_time": json.loads(row[16]),
-                "rewards_over_time": json.loads(row[17]),
-                "reward": row[18]
-            })
+            # results.append({
+            #     "id": row[0],
+            #     "seed": row[1],
+            #     "temporal_resolution": row[2],
+            #     "temporal_substeps": row[3],
+            #     "temporal_run": row[4],
+            #     "joints": row[5],
+            #     "control": json.loads(row[6]),
+            #     "final_x_position": row[7],
+            #     "final_y_position": row[8],
+            #     "final_x_velocity": row[9],
+            #     "final_y_velocity": row[10],
+            #     "direction": row[11],
+            #     "x_positions_over_time": json.loads(row[12]),
+            #     "y_positions_over_time": json.loads(row[13]),
+            #     "x_velocities_over_time": json.loads(row[14]),
+            #     "y_velocities_over_time": json.loads(row[15]),
+            #     "directions_over_time": json.loads(row[16]),
+            #     "rewards_over_time": json.loads(row[17]),
+            #     "reward": row[18]
+            # })
+            results.append(json.loads(row[6]))
     conn.close()
     return results
 
