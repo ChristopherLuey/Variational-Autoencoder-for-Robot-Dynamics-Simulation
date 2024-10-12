@@ -275,12 +275,7 @@ def query_sequences_near_reward(reward=1.0, tol=0.05):
                 "rewards_over_time": json.loads(row[17]),
                 "reward": row[18]
             })
-            # # Start of Selection
-            # print(len(results))
-            # print(type(results))
-            # print(type(results[0]))
-            # print(tabulate(results, headers="keys", tablefmt="grid"))
-            return results
+        return results
 
 
 def query_database(column, value):
