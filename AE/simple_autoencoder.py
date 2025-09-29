@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 from datetime import datetime
+from typing import Optional
 
 class CVAEEncoder(nn.Module):
     def __init__(self, layer_sizes, latent_space, activation=nn.ReLU):
@@ -46,6 +47,7 @@ class BasicAutoencoder(nn.Module):
         self.joints = joints
         self.timesteps = timesteps
         self.condition_size = condition_size
+        self.latent_size = latent_size
         input_size = joints * timesteps
         full_encoder_sizes = [input_size + condition_size] + layer_sizes
         self.encoder = CVAEEncoder(full_encoder_sizes, latent_size)
@@ -75,6 +77,29 @@ class BasicAutoencoder(nn.Module):
         condition_size = ...  # Extract condition_size from model_str
         output_activation = ...  # Extract output_activation from model_str if available
         return cls(joints, timesteps, latent_size, layer_sizes, condition_size, output_activation, learning_rate)
+
+    def _flatten_controls(self, controls: torch.Tensor) -> torch.Tensor:
+        """Ensure the control batch is a 2D tensor of shape [batch, timesteps * joints]."""
+        if controls.dim() == 3:
+            if controls.size(1) != self.timesteps or controls.size(2) != self.joints:
+                raise ValueError(
+                    f"Control tensor has invalid shape {controls.shape}; expected [batch, {self.timesteps}, {self.joints}]."
+                )
+            return controls.view(controls.size(0), -1)
+        if controls.dim() == 2:
+            return controls
+        raise ValueError("Controls must be a 2D or 3D tensor.")
+
+    def _prepare_condition(self, condition: Optional[torch.Tensor], batch_size: int, device: torch.device) -> Optional[torch.Tensor]:
+        if condition is None:
+            return None
+        if condition.dim() == 1:
+            condition = condition.unsqueeze(-1)
+        if condition.dim() != 2:
+            raise ValueError("Condition tensor must be 2D with shape [batch, condition_size].")
+        if condition.size(0) != batch_size:
+            raise ValueError(f"Condition batch size {condition.size(0)} does not match controls batch size {batch_size}.")
+        return condition.to(device)
 
     def forward(self, x, condition=None, evaluate=False):
         if x.dim() != 2:
@@ -113,10 +138,10 @@ class BasicAutoencoder(nn.Module):
 
     def train_single_epoch(self, train_controls, condition, device):
         self.train()
-        train_controls = train_controls.to(device)  # Shape: [batch_size, input_size]
-        condition = condition.to(device) if condition is not None else None
+        train_controls = self._flatten_controls(train_controls).to(device)
+        condition = self._prepare_condition(condition, train_controls.size(0), device)
         self.optimizer.zero_grad()
-        
+
         # Debug: Print shapes and check for NaNs
         print(f"Train controls shape: {train_controls.shape}")
         print(f"Condition shape: {condition.shape if condition is not None else None}")
@@ -142,7 +167,7 @@ class BasicAutoencoder(nn.Module):
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=1.0)
             self.optimizer.step()
-        
+
         return loss.item(), latent_representation
 
     def train_model(self, train_controls, val_controls, device, epochs=100, visualize_reconstruction=False, results_dir=None, condition=None):
@@ -192,6 +217,40 @@ class BasicAutoencoder(nn.Module):
             torch.save(self.state_dict(), os.path.join(results_dir, 'trained_autoencoder.pth'))
 
         return train_losses, val_losses
+
+    def online_update(self, controls: torch.Tensor, condition: Optional[torch.Tensor] = None) -> float:
+        """Perform a single gradient update using a micro-batch of controls."""
+        self.train()
+        device = next(self.parameters()).device
+        controls = self._flatten_controls(controls).to(device)
+        condition = self._prepare_condition(condition, controls.size(0), device)
+        self.optimizer.zero_grad()
+        decoded, _, mean, log_variation = self.forward(controls, condition)
+        loss = self.loss_function(controls, decoded, mean, log_variation)
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=1.0)
+        self.optimizer.step()
+        return loss.item()
+
+    @torch.no_grad()
+    def sample_latent(self, batch_size: int, device: Optional[torch.device] = None) -> torch.Tensor:
+        if device is None:
+            device = next(self.parameters()).device
+        return torch.randn(batch_size, self.latent_size, device=device)
+
+    @torch.no_grad()
+    def decode_latent(self, latent: torch.Tensor, condition: Optional[torch.Tensor] = None) -> torch.Tensor:
+        if latent.dim() != 2 or latent.size(1) != self.latent_size:
+            raise ValueError(f"Latent tensor must have shape [batch, {self.latent_size}].")
+        device = latent.device
+        if condition is not None:
+            if condition.dim() == 1:
+                condition = condition.unsqueeze(-1)
+            if condition.dim() != 2 or condition.size(0) != latent.size(0):
+                raise ValueError("Condition tensor must have shape [batch, condition_size].")
+            latent = torch.cat((latent, condition.to(device)), dim=-1)
+        decoded = self.decoder(latent)
+        return decoded.view(decoded.size(0), self.timesteps, self.joints)
 
     def evaluate(self, input_batch, device, condition=None):
         self.eval()
